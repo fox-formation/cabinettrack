@@ -1,0 +1,502 @@
+// CabinetTrack — Prisma Schema
+// Multi-tenant SaaS pour cabinets d'expertise comptable
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ──────────────────────────────────────────────
+// Multi-tenant : chaque cabinet est un tenant
+// ──────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid())
+  nom       String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cabinets       Cabinet[]
+  collaborateurs User[]
+  dossiers       Dossier[]
+  dossierEmails  DossierEmail[]
+  echeances      Echeance[]
+  alertes        Alerte[]
+  emails         Email[]
+  suiviCourants  SuiviCourant[]
+  suiviRevisions SuiviRevision[]
+  importHistories ImportHistory[]
+
+  @@map("tenants")
+}
+
+model Cabinet {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  nom      String
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossiers Dossier[]
+
+  @@unique([tenantId, nom])
+  @@map("cabinets")
+}
+
+// ──────────────────────────────────────────────
+// Utilisateurs / Collaborateurs
+// ──────────────────────────────────────────────
+
+enum Role {
+  ASSISTANT
+  CONFIRME
+  SUPERVISEUR
+  EXPERT_COMPTABLE
+}
+
+enum StatutCollab {
+  ACTIF
+  ARCHIVE
+}
+
+model User {
+  id             String       @id @default(uuid())
+  tenantId       String       @map("tenant_id")
+  prenom         String
+  nom            String       @default("")
+  email          String?
+  role           Role         @default(ASSISTANT)
+  statut         StatutCollab @default(ACTIF)
+  dateArrivee    DateTime?    @map("date_arrivee") @db.Date
+  dateFinContrat DateTime?    @map("date_fin_contrat") @db.Date
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  microsoftId String? @unique @map("microsoft_id")
+  image       String?
+
+  tenant                   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossiersPrincipaux       Dossier[]            @relation("CollaborateurPrincipal")
+  dossiersSecondaires      CollaborateurDossier[]
+  alertesRecues            Alerte[]
+  emailsTraites            Email[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model CollaborateurDossier {
+  id            String @id @default(uuid())
+  userId        String @map("user_id")
+  dossierId     String @map("dossier_id")
+  roleOnDossier String @default("secondaire") @map("role_on_dossier")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  suiviRevisions SuiviRevision[]
+
+  @@unique([userId, dossierId])
+  @@map("collaborateurs_dossier")
+}
+
+// ──────────────────────────────────────────────
+// Dossiers clients
+// ──────────────────────────────────────────────
+
+enum FormeJuridique {
+  SAS
+  SCI
+  SARL
+  EURL
+  SASU
+  EI
+  BNC
+  LMNP
+  SNC
+  SEP
+  SC
+  SOCIETE_CIVILE
+  ASSOCIATION
+  AUTO_ENTREPRENEUR
+}
+
+enum RegimeFiscal {
+  IS
+  IR
+}
+
+enum RegimeTVA {
+  RM
+  ST
+  RT
+  EXONERE
+}
+
+enum TypeMission {
+  SAISIE
+  SAISIE_MENSUELLE
+  SAISIE_TRIMESTRIELLE
+  SAISIE_SEMESTRIELLE
+  SAISIE_ANNUELLE
+  REVISION
+}
+
+enum LogicielComptable {
+  ACD
+  PENNYLANE
+  SAGE
+  QUADRA
+  TIIME
+  AXONAUT
+  JULY
+}
+
+enum SuiviEtape {
+  QUART
+  DEMI
+  EN_COURS
+  EFFECTUE
+}
+
+enum StatutRevision {
+  RAS
+  DEMANDE_CLIENT
+  ACTION_REQUISE
+}
+
+model Dossier {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  cabinetId String @map("cabinet_id")
+
+  // Identité
+  raisonSociale    String  @map("raison_sociale")
+  activite         String?
+  nomContact       String? @map("nom_contact")
+  emailContact     String? @map("email_contact")
+  telephoneContact String? @map("telephone_contact")
+  siren            String? // Toujours string (zéros initiaux)
+  formeJuridique   FormeJuridique? @map("forme_juridique")
+  regimeFiscal     RegimeFiscal?   @map("regime_fiscal")
+  typeMission      TypeMission?    @map("type_mission")
+  logicielComptable LogicielComptable? @map("logiciel_comptable")
+  paie             Boolean         @default(true) @map("paie")
+  commentaireInterne String? @map("commentaire_interne") @db.Text
+
+  // Collaborateur principal
+  collaborateurPrincipalId String? @map("collaborateur_principal_id")
+
+  // Dates clés
+  dateClotureExercice      DateTime? @map("date_cloture_exercice") @db.Date
+  datePrevueArreteBilan    DateTime? @map("date_prevue_arrete_bilan") @db.Date
+  dateBilanPersonnalisee   Boolean   @default(false) @map("date_bilan_personnalisee")
+  dateArreteBilan          DateTime? @map("date_arrete_bilan") @db.Date
+  commentaireBilan         String?   @map("commentaire_bilan") @db.Text
+
+  // Suivi Liasse Fiscale (14 étapes)
+  statutCourantSaisie    SuiviEtape? @map("statut_courant_saisie")
+  statutManquantSaisie   SuiviEtape? @map("statut_manquant_saisie")
+  noteManquantSaisie     String?     @map("note_manquant_saisie") @db.Text
+  statutRevisionFaite    SuiviEtape? @map("statut_revision_faite")
+  statutOdInventaire     SuiviEtape? @map("statut_od_inventaire")
+  statutManquantRevision SuiviEtape? @map("statut_manquant_revision")
+  noteManquantRevision   String?     @map("note_manquant_revision") @db.Text
+  statutEtatsFinanciers  SuiviEtape? @map("statut_etats_financiers")
+  statutLiasseFiscale    SuiviEtape? @map("statut_liasse_fiscale")
+  statutSignatureAssocie SuiviEtape? @map("statut_signature_associe")
+  statutEnvoiClient      SuiviEtape? @map("statut_envoi_client")
+  statutTeledeclaration  SuiviEtape? @map("statut_teledeclaration")
+  statut2572             SuiviEtape? @map("statut_2572")
+  statutDas2             SuiviEtape? @map("statut_das2")
+  statutVerifEnvoi       SuiviEtape? @map("statut_verif_envoi")
+  statutAgo              SuiviEtape? @map("statut_ago")
+
+  // TVA
+  regimeTva     RegimeTVA? @map("regime_tva")
+  dateLimiteTva Int?       @map("date_limite_tva")
+  tvaSuivi      Json?      @map("tva_suivi") @db.JsonB
+
+  // Taxes diverses
+  taxeFonciereNote   String? @map("taxe_fonciere_note") @db.Text
+  suiviCfe           String? @map("suivi_cfe")
+  suiviCvae          String? @map("suivi_cvae")
+  suiviTvs           String? @map("suivi_tvs")
+  taxeFonciereDetail String? @map("taxe_fonciere_detail")
+
+  // Acomptes IS
+  acomptesIs  Json?   @map("acomptes_is") @db.JsonB
+  soldeIs     String? @map("solde_is")
+  acompteIsN1 String? @map("acompte_is_n1")
+
+  // CVAE
+  acompteCvae06 String? @map("acompte_cvae_06")
+  acompteCvae09 String? @map("acompte_cvae_09")
+  soldeCvae     String? @map("solde_cvae")
+
+  // 2561 (IFU)
+  statut2561 String? @map("statut_2561")
+
+  // Statut du dossier (ACTIF / ARCHIVE)
+  statut          String   @default("ACTIF")
+  raisonArchivage String?  @map("raison_archivage")
+  dateArchivage   DateTime? @map("date_archivage")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cabinet                   Cabinet              @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  collaborateurPrincipal    User?                @relation("CollaborateurPrincipal", fields: [collaborateurPrincipalId], references: [id])
+  collaborateursSecondaires CollaborateurDossier[]
+  echeances                 Echeance[]
+  emails                    Email[]
+  adressesEmail             DossierEmail[]
+  alertes                   Alerte[]
+  suiviCourants             SuiviCourant[]
+  suiviRevisions            SuiviRevision[]
+
+  @@index([tenantId])
+  @@index([cabinetId])
+  @@index([tenantId, raisonSociale])
+  @@map("dossiers")
+}
+
+// ──────────────────────────────────────────────
+// Adresses email par dossier
+// ──────────────────────────────────────────────
+
+model DossierEmail {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  dossierId String   @map("dossier_id")
+  email     String
+  label     String?
+  ordre     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dossierId])
+  @@map("dossier_emails")
+}
+
+// ──────────────────────────────────────────────
+// Suivi courant mensuel
+// ──────────────────────────────────────────────
+
+model SuiviCourant {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  dossierId String @map("dossier_id")
+  periode   String // format "2026-01"
+
+  saisieAchat       SuiviEtape? @map("saisie_achat")
+  saisieVente       SuiviEtape? @map("saisie_vente")
+  saisieBanque      SuiviEtape? @map("saisie_banque")
+  lettrage          SuiviEtape? @map("lettrage")
+  paieSaisie        SuiviEtape? @map("paie_saisie")
+  paieRevision      SuiviEtape? @map("paie_revision")
+  tvaDeclaree       SuiviEtape? @map("tva_declaree")
+  capitauxPropres   SuiviEtape? @map("capitaux_propres")
+  lettrageVente     SuiviEtape? @map("lettrage_vente")
+  compteAttenteOk   SuiviEtape? @map("compte_attente_ok")
+  notePeriode       String?     @map("note_periode") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dossierId, periode])
+  @@index([tenantId, dossierId])
+  @@map("suivi_courants")
+}
+
+// ──────────────────────────────────────────────
+// Suivi révision (dossiers révision annuelle)
+// ──────────────────────────────────────────────
+
+model SuiviRevision {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  dossierId String @map("dossier_id")
+
+  dateContact     DateTime        @map("date_contact") @db.Date
+  collaborateurId String?         @map("collaborateur_id")
+  resume          String?         @db.Text
+  statut          StatutRevision  @default(RAS)
+  prochainContact DateTime?       @map("prochain_contact") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier       Dossier              @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  collaborateur CollaborateurDossier? @relation(fields: [collaborateurId], references: [id])
+
+  @@index([tenantId, dossierId])
+  @@map("suivi_revision")
+}
+
+// ──────────────────────────────────────────────
+// Échéances
+// ──────────────────────────────────────────────
+
+enum TypeEcheance {
+  FISCALE
+  SOCIALE
+  JURIDIQUE
+}
+
+enum StatutEcheance {
+  A_FAIRE
+  EN_COURS
+  FAIT
+  NON_APPLICABLE
+}
+
+model Echeance {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  dossierId String @map("dossier_id")
+
+  libelle      String
+  type         TypeEcheance
+  dateEcheance DateTime       @map("date_echeance") @db.Date
+  statut       StatutEcheance @default(A_FAIRE)
+  cleChamp     String?        @map("cle_champ")
+  commentaire  String?        @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier  @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  alertes Alerte[]
+
+  @@index([tenantId])
+  @@index([dossierId])
+  @@index([tenantId, dateEcheance])
+  @@map("echeances")
+}
+
+// ──────────────────────────────────────────────
+// Alertes
+// ──────────────────────────────────────────────
+
+enum NiveauAlerte {
+  INFO
+  WARNING
+  URGENT
+  CRITIQUE
+}
+
+model Alerte {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  dossierId  String?  @map("dossier_id")
+  echeanceId String?  @map("echeance_id")
+  userId     String?  @map("user_id")
+
+  titre      String
+  message    String       @db.Text
+  niveau     NiveauAlerte @default(INFO)
+  lue        Boolean      @default(false)
+  acquittee  Boolean      @default(false)
+  dateAlerte DateTime     @map("date_alerte")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier  Dossier?  @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  echeance Echeance? @relation(fields: [echeanceId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId, lue])
+  @@map("alertes")
+}
+
+// ──────────────────────────────────────────────
+// Emails (intégration Outlook)
+// ──────────────────────────────────────────────
+
+enum TagEmail {
+  FISCAL
+  SOCIAL
+  JURIDIQUE
+  ADMIN
+  AUTRE
+}
+
+enum NiveauConfiance {
+  HAUTE
+  MOYENNE
+  FAIBLE
+}
+
+model Email {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  dossierId String? @map("dossier_id")
+  userId    String? @map("user_id")
+
+  microsoftMessageId String   @unique @map("microsoft_message_id")
+  expediteur         String
+  destinataires      String[]
+  sujet              String
+  corpsTexte         String?  @map("corps_texte") @db.Text
+  dateReception      DateTime @map("date_reception")
+
+  // IA
+  resumeIa         String?          @map("resume_ia") @db.Text
+  tagIa            TagEmail?        @map("tag_ia")
+  urgenceIa        Int?             @map("urgence_ia")
+  dateDetecteeIa   DateTime?        @map("date_detectee_ia") @db.Date
+  confianceMatchIa NiveauConfiance? @map("confiance_match_ia")
+
+  rattacheAuto Boolean @default(false) @map("rattache_auto")
+  valide       Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier? @relation(fields: [dossierId], references: [id])
+  user    User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([dossierId])
+  @@map("emails")
+}
+
+// ──────────────────────────────────────────────
+// Historique des imports Excel
+// ──────────────────────────────────────────────
+
+model ImportHistory {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  fileName  String   @map("file_name")
+  fileData  Bytes?   @map("file_data")
+  total     Int
+  imported  Int
+  errors    Int
+  unmappedHeaders String[] @map("unmapped_headers")
+  details   Json?    // Array of { line, raisonSociale, status, error? }
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("import_history")
+}

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)/stats/\")",
+      "Bash(taskkill //F //IM \"node.exe\")",
+      "Bash(npx prisma migrate dev --name add_dossier_emails)",
+      "Bash(find \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)\" -type d -maxdepth 2)",
+      "Bash(ls -la \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)\")",
+      "Bash(find \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)\" -name \"page.tsx\" -o -name \"page.ts\")",
+      "Bash(ls -la \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)/dashboard/\")",
+      "Bash(ls -la \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)/dossiers/\")",
+      "Bash(head -50 \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)/dossiers/page.tsx\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\touch\\Desktop\\Moncab\\src\\app\\api\\dossiers\\[id]"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git --use-npm)",
+      "Read(//c/Users/touch/Desktop/**)",
+      "Bash(npm install -D @types/uuid ts-node)",
+      "Bash(npx prisma init)",
+      "Bash(node -e \":*)",
+      "Bash(npx next build)",
+      "Bash(NEXT_TELEMETRY_DISABLED=1 npx next build --no-lint)",
+      "Bash(tasklist)",
+      "Bash(npm install -D vitest @vitejs/plugin-react)",
+      "Bash(npx vitest run)",
+      "Bash(wmic logicaldisk get size,freespace,caption)",
+      "Bash(ls \"c:/Users/touch/Desktop/Moncab/src/app/\\(dashboard\\)/parametres/\")",
+      "Bash(npx prisma migrate dev --name add_new_etapes_bilan)",
+      "Bash(npx prisma generate)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\touch\\Desktop\\moncab-temp",
+      "C:\\Users\\touch\\Desktop\\Moncab\\src\\lib"
+    ]
+  }
+}
