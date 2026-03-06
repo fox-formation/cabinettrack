@@ -9,10 +9,6 @@ import { createClient } from "@supabase/supabase-js"
 const ALLOWED_DOMAINS = ["fiduciaire-villeurbannaise.com", "finatec-expertise.com"]
 
 export default function RegisterPage() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -43,6 +39,10 @@ export default function RegisterPage() {
     }
 
     setLoading(true)
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
     const { error: signUpError } = await supabase.auth.signUp({ email, password })
     setLoading(false)
 

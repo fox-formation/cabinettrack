@@ -9,10 +9,6 @@ import { createClient } from "@supabase/supabase-js"
 const ALLOWED_DOMAINS = ["fiduciaire-villeurbannaise.com", "finatec-expertise.com"]
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
   const [email, setEmail] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
@@ -29,6 +25,10 @@ export default function ForgotPasswordPage() {
     }
 
     setLoading(true)
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
     const redirectTo = `${window.location.origin}/auth/reset-password`
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
     setLoading(false)

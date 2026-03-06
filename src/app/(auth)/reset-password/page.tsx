@@ -7,11 +7,14 @@ import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 
-function ResetPasswordContent() {
-  const supabase = createClient(
+function getSupabase() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
+}
+
+function ResetPasswordContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [password, setPassword] = useState("")
@@ -26,7 +29,7 @@ function ResetPasswordContent() {
     const type = searchParams.get("type")
 
     if (tokenHash && type === "recovery") {
-      supabase.auth
+      getSupabase().auth
         .verifyOtp({ token_hash: tokenHash, type: "recovery" })
         .then(({ error: verifyError }) => {
           if (verifyError) {
@@ -57,7 +60,7 @@ function ResetPasswordContent() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
+    const { error: updateError } = await getSupabase().auth.updateUser({ password })
     setLoading(false)
 
     if (updateError) {
