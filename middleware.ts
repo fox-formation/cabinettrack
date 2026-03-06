@@ -7,23 +7,34 @@ const ALLOWED_DOMAINS = [
 ]
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  })
+  try {
+    console.log("[middleware] path:", request.nextUrl.pathname)
 
-  if (!token) {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    })
+
+    console.log("[middleware] token:", token ? "found" : "null")
+    console.log("[middleware] NEXTAUTH_SECRET present:", !!process.env.NEXTAUTH_SECRET)
+
+    if (!token) {
+      console.log("[middleware] redirecting to login")
+      return NextResponse.redirect(new URL("/login", request.url))
+    }
+
+    const email = (token.email as string) ?? ""
+    const domain = email.split("@")[1]?.toLowerCase()
+
+    if (!domain || !ALLOWED_DOMAINS.includes(domain)) {
+      return NextResponse.redirect(new URL("/login?error=unauthorized", request.url))
+    }
+
+    return NextResponse.next()
+  } catch (err) {
+    console.error("[middleware] error:", err)
     return NextResponse.redirect(new URL("/login", request.url))
   }
-
-  const email = (token.email as string) ?? ""
-  const domain = email.split("@")[1]?.toLowerCase()
-
-  if (!domain || !ALLOWED_DOMAINS.includes(domain)) {
-    return NextResponse.redirect(new URL("/login?error=unauthorized", request.url))
-  }
-
-  return NextResponse.next()
 }
 
 export const config = {
