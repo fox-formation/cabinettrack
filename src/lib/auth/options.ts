@@ -1,5 +1,7 @@
 import { NextAuthOptions } from "next-auth"
 import AzureADProvider from "next-auth/providers/azure-ad"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { createClient } from "@supabase/supabase-js"
 import { prisma } from "@/lib/db/prisma"
 
 const ALLOWED_DOMAINS = [
@@ -12,8 +14,40 @@ function isAllowedDomain(email: string): boolean {
   return !!domain && ALLOWED_DOMAINS.includes(domain)
 }
 
+console.log("[auth] NEXTAUTH_SECRET present:", !!process.env.NEXTAUTH_SECRET)
+
 export const authOptions: NextAuthOptions = {
   providers: [
+    CredentialsProvider({
+      name: "Email",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Mot de passe", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null
+
+        if (!isAllowedDomain(credentials.email)) return null
+
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        )
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: credentials.email,
+          password: credentials.password,
+        })
+
+        if (error || !data.user) return null
+
+        return {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.user_metadata?.name ?? data.user.email?.split("@")[0],
+        }
+      },
+    }),
     ...(process.env.AZURE_CLIENT_ID
       ? [
           AzureADProvider({

@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth"
+import { redirect } from "next/navigation"
+import { authOptions } from "@/lib/auth/options"
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/tenant"
 import DashboardShell from "@/components/layout/DashboardShell"
@@ -9,6 +12,11 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    redirect("/login")
+  }
+
   let alertesCount = 0
   let emailsNonLus = 0
 

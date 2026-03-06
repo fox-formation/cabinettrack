@@ -2,7 +2,7 @@
 
 import { signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
-import { Suspense } from "react"
+import { useState, Suspense } from "react"
 import Link from "next/link"
 
 function LoginContent() {
@@ -10,6 +10,31 @@ function LoginContent() {
   const error = searchParams.get("error")
   const confirmed = searchParams.get("confirmed")
   const reset = searchParams.get("reset")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [loginError, setLoginError] = useState("")
+
+  const handleCredentialsLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoginError("")
+    setLoading(true)
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    })
+
+    setLoading(false)
+
+    if (result?.error) {
+      setLoginError("Email ou mot de passe incorrect.")
+      return
+    }
+
+    window.location.href = "/"
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: "#F9F7F4" }}>
@@ -49,6 +74,49 @@ function LoginContent() {
             Erreur de connexion. Veuillez réessayer.
           </div>
         )}
+        {loginError && (
+          <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+            {loginError}
+          </div>
+        )}
+
+        <form onSubmit={handleCredentialsLogin} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="prenom@fiduciaire-villeurbannaise.com"
+              className="w-full rounded border border-gray-200 px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:border-gray-400 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Mot de passe</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Votre mot de passe"
+              className="w-full rounded border border-gray-200 px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:border-gray-400 focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loading ? "Connexion..." : "Se connecter"}
+          </button>
+        </form>
+
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-[10px] text-gray-300">ou</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
 
         <button
           onClick={() => signIn("azure-ad", { callbackUrl: "/" })}
