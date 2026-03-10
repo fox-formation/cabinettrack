@@ -7,7 +7,8 @@
 
 import { prisma } from "@/lib/db/prisma"
 
-const MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0"
+const OUTLOOK_TENANT = process.env.OUTLOOK_TENANT_ID || "common"
+const MICROSOFT_AUTH_URL = `https://login.microsoftonline.com/${OUTLOOK_TENANT}/oauth2/v2.0`
 const SCOPES = "Mail.Read Mail.ReadWrite offline_access User.Read"
 
 function getClientId(): string {
