@@ -32,8 +32,24 @@ model Tenant {
   suiviCourants  SuiviCourant[]
   suiviRevisions SuiviRevision[]
   importHistories ImportHistory[]
+  outlookConnection OutlookConnection?
 
   @@map("tenants")
+}
+
+model OutlookConnection {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique @map("tenant_id")
+  userEmail      String   @map("user_email")
+  accessToken    String   @map("access_token") @db.Text
+  refreshToken   String   @map("refresh_token") @db.Text
+  expiresAt      DateTime @map("expires_at")
+  connectedAt    DateTime @default(now()) @map("connected_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("outlook_connections")
 }
 
 model Cabinet {

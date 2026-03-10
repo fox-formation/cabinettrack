@@ -26,10 +26,26 @@ interface ImportHistoryEntry {
   hasFile: boolean
 }
 
-type TabKey = "importation" | "cabinet" | "couleur"
+interface OutlookStatus {
+  connected: boolean
+  userEmail?: string
+  connectedAt?: string
+  tokenValid?: boolean
+}
+
+interface SyncResult {
+  synced: number
+  newEmails: number
+  total: number
+  message: string
+  error?: string
+}
+
+type TabKey = "importation" | "outlook" | "cabinet" | "couleur"
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "importation", label: "Importation" },
+  { key: "outlook", label: "Emails / Outlook" },
   { key: "cabinet", label: "Informations du cabinet" },
   { key: "couleur", label: "Couleur du menu" },
 ]
@@ -51,6 +67,13 @@ export default function ParametresPage() {
   const [history, setHistory] = useState<ImportHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // Outlook state
+  const [outlookStatus, setOutlookStatus] = useState<OutlookStatus | null>(null)
+  const [outlookLoading, setOutlookLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
+
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true)
     try {
@@ -63,9 +86,53 @@ export default function ParametresPage() {
     }
   }, [])
 
+  const fetchOutlookStatus = useCallback(async () => {
+    setOutlookLoading(true)
+    try {
+      const res = await fetch("/api/outlook/status")
+      if (res.ok) setOutlookStatus(await res.json())
+    } catch {
+      // silent
+    } finally {
+      setOutlookLoading(false)
+    }
+  }, [])
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch("/api/emails/sync", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        setSyncResult({ synced: 0, newEmails: 0, total: 0, message: "", error: data.error })
+      } else {
+        setSyncResult(data)
+      }
+    } catch {
+      setSyncResult({ synced: 0, newEmails: 0, total: 0, message: "", error: "Erreur réseau" })
+    } finally {
+      setSyncing(false)
+    }
+  }, [])
+
+  const handleDisconnect = useCallback(async () => {
+    setDisconnecting(true)
+    try {
+      await fetch("/api/outlook/disconnect", { method: "POST" })
+      setOutlookStatus({ connected: false })
+      setSyncResult(null)
+    } catch {
+      // silent
+    } finally {
+      setDisconnecting(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (activeTab === "importation") fetchHistory()
-  }, [activeTab, fetchHistory])
+    if (activeTab === "outlook") fetchOutlookStatus()
+  }, [activeTab, fetchHistory, fetchOutlookStatus])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null
@@ -359,6 +426,134 @@ export default function ParametresPage() {
                   </table>
                 </div>
               )}
+            </section>
+          </div>
+        )}
+
+        {/* ── Tab: Emails / Outlook ──────────────────── */}
+        {activeTab === "outlook" && (
+          <div className="space-y-6">
+            {/* Connection status */}
+            <section className="rounded-xl bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">Connexion Outlook</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Connectez votre boîte mail Outlook pour récupérer automatiquement les emails de vos clients.
+              </p>
+
+              {outlookLoading ? (
+                <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                  Vérification...
+                </div>
+              ) : outlookStatus?.connected ? (
+                <div className="mt-4 space-y-4">
+                  <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                    <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Connecté</p>
+                      <p className="text-xs text-green-600">
+                        {outlookStatus.userEmail}
+                        {outlookStatus.connectedAt && (
+                          <span className="ml-2 text-green-500">
+                            depuis le {new Date(outlookStatus.connectedAt).toLocaleDateString("fr-FR")}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleSync}
+                      disabled={syncing}
+                      className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {syncing ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          Synchronisation...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Synchroniser les emails
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleDisconnect}
+                      disabled={disconnecting}
+                      className="rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {disconnecting ? "Déconnexion..." : "Déconnecter Outlook"}
+                    </button>
+                  </div>
+
+                  {syncResult && (
+                    <div className={`rounded-lg border px-4 py-3 text-sm ${
+                      syncResult.error
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : "border-blue-200 bg-blue-50 text-blue-700"
+                    }`}>
+                      {syncResult.error ? (
+                        <p>{syncResult.error}</p>
+                      ) : (
+                        <div>
+                          <p className="font-medium">{syncResult.message}</p>
+                          <p className="mt-1 text-xs opacity-75">
+                            {syncResult.synced} email(s) analysé(s), {syncResult.newEmails} nouveau(x)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                    Aucun compte Outlook connecté. Cliquez ci-dessous pour autoriser l&apos;accès à votre boîte mail.
+                  </div>
+                  <a
+                    href="/api/outlook/authorize"
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                  >
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M2 3v18h20V3H2zm9 12H4V5h7v10zm9 0h-7V5h7v10z" />
+                    </svg>
+                    Connecter mon compte Outlook
+                  </a>
+                </div>
+              )}
+            </section>
+
+            {/* Instructions */}
+            <section className="rounded-xl bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">Comment ça marche ?</h2>
+              <div className="mt-4 space-y-3 text-sm text-gray-600">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">1</span>
+                  <p><strong>Connectez</strong> votre compte Outlook professionnel en cliquant sur le bouton ci-dessus. Vous serez redirigé vers Microsoft pour autoriser la lecture de vos emails.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">2</span>
+                  <p><strong>Synchronisez</strong> vos emails en cliquant sur le bouton &quot;Synchroniser&quot;. Les 50 derniers emails seront récupérés et analysés.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">3</span>
+                  <p><strong>L&apos;IA classifie</strong> chaque email (fiscal, social, juridique, admin) et tente de le rattacher automatiquement au bon dossier client.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">4</span>
+                  <p>Retrouvez tous vos emails dans la section <strong>Emails</strong> du menu. Validez ou corrigez les rattachements suggérés par l&apos;IA.</p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                <strong>Note :</strong> Aucun droit administrateur Azure n&apos;est nécessaire. Vous autorisez uniquement la lecture de <em>votre propre</em> boîte mail. Vous pouvez révoquer l&apos;accès à tout moment.
+              </div>
             </section>
           </div>
         )}
