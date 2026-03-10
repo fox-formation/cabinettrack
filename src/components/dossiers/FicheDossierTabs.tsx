@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import type { Dossier, Echeance, User, CollaborateurDossier, Cabinet, DossierEmail } from "@prisma/client"
+import { useState, useCallback, useEffect } from "react"
+import type { Dossier, Echeance, User, CollaborateurDossier, Cabinet, DossierEmail, Groupe } from "@prisma/client"
 import GrilleTVA from "./GrilleTVA"
 import BarreAvancement from "./BarreAvancement"
 import { useToast } from "@/components/ui/Toast"
@@ -14,6 +14,7 @@ type DossierFull = Dossier & {
   })[]
   echeances: Echeance[]
   adressesEmail: DossierEmail[]
+  groupe: Pick<Groupe, "id" | "code" | "nom"> | null
 }
 
 type CollabOption = Pick<User, "id" | "prenom" | "role">
@@ -176,6 +177,7 @@ function TabGeneral({
       emailContact: d.emailContact ?? "",
       telephoneContact: d.telephoneContact ?? "",
       collaborateurPrincipalId: d.collaborateurPrincipalId ?? "",
+      groupeId: d.groupeId ?? "",
       commentaireInterne: d.commentaireInterne ?? "",
     }
   }
@@ -216,6 +218,7 @@ function TabGeneral({
       emailContact: form.emailContact.trim() || null,
       telephoneContact: form.telephoneContact.trim() || null,
       collaborateurPrincipalId: form.collaborateurPrincipalId || null,
+      groupeId: form.groupeId || null,
       commentaireInterne: form.commentaireInterne.trim() || null,
     }
 
@@ -256,6 +259,7 @@ function TabGeneral({
             <InfoRow label="Activité" value={dossier.activite} />
             <InfoRow label="Mission" value={dossier.typeMission ? missionLabels[dossier.typeMission] ?? dossier.typeMission : null} />
             <InfoRow label="Logiciel" value={dossier.logicielComptable ? logicielLabels[dossier.logicielComptable] ?? dossier.logicielComptable : null} />
+            <InfoRow label="Groupe" value={dossier.groupe ? `${dossier.groupe.nom} (${dossier.groupe.code})` : null} />
           </div>
           <div className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Contact</h3>
@@ -313,6 +317,7 @@ function TabGeneral({
           <EditField label="Activité" value={form.activite} onChange={(v) => set("activite", v)} />
           <EditSelect label="Mission" value={form.typeMission} onChange={(v) => set("typeMission", v)} options={Object.entries(missionLabels).map(([k, v]) => ({ value: k, label: v }))} />
           <EditSelect label="Logiciel" value={form.logicielComptable} onChange={(v) => set("logicielComptable", v)} options={Object.entries(logicielLabels).map(([k, v]) => ({ value: k, label: v }))} />
+          <GroupeSelect value={form.groupeId} onChange={(v) => set("groupeId", v)} />
         </div>
         <div className="space-y-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Contact</h3>
@@ -1409,4 +1414,142 @@ function toInputDate(date: Date | string | null | undefined): string {
   if (!date) return ""
   const d = new Date(date)
   return d.toISOString().split("T")[0]
+}
+
+// ──────────────────────────────────────────────
+// Groupe select with create-new option
+// ──────────────────────────────────────────────
+
+interface GroupeOption { id: string; code: string; nom: string; nbDossiers: number }
+
+function GroupeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [groupes, setGroupes] = useState<GroupeOption[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newCode, setNewCode] = useState("")
+  const [newNom, setNewNom] = useState("")
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    fetch("/api/groupes")
+      .then((r) => r.json())
+      .then((data: { groupes: GroupeOption[] }) => {
+        setGroupes(data.groupes)
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  async function createGroupe() {
+    setError("")
+    const code = newCode.trim().replace(/\s+/g, "")
+    const nom = newNom.trim()
+
+    if (!code || !nom) {
+      setError("Code et nom requis")
+      return
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(code)) {
+      setError("Code: lettres, chiffres, tirets uniquement")
+      return
+    }
+
+    const res = await fetch("/api/groupes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, nom }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json()
+      setError(data.error ?? "Erreur")
+      return
+    }
+
+    const groupe: GroupeOption = { ...(await res.json()), nbDossiers: 0 }
+    setGroupes((prev) => [...prev, groupe].sort((a, b) => a.nom.localeCompare(b.nom)))
+    onChange(groupe.id)
+    setCreating(false)
+    setNewCode("")
+    setNewNom("")
+  }
+
+  if (!loaded) {
+    return (
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-500">Groupe</label>
+        <div className="text-xs text-gray-400">Chargement...</div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-500">Groupe</label>
+      <div className="flex items-center gap-2">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:border-blue-300 focus:outline-none"
+        >
+          <option value="">— Aucun groupe —</option>
+          {groupes.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.nom} ({g.code}) — {g.nbDossiers} dossier{g.nbDossiers > 1 ? "s" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setCreating((v) => !v)}
+          className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-500 hover:bg-gray-50"
+          title="Créer un nouveau groupe"
+        >
+          + Nouveau
+        </button>
+      </div>
+      {creating && (
+        <div className="mt-2 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="mb-0.5 block text-[10px] font-medium text-gray-500">Code (alphanum, sans espaces)</label>
+              <input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value.replace(/\s/g, ""))}
+                placeholder="GRP-GIRARD"
+                className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-blue-300 focus:outline-none"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="mb-0.5 block text-[10px] font-medium text-gray-500">Nom du groupe</label>
+              <input
+                value={newNom}
+                onChange={(e) => setNewNom(e.target.value)}
+                placeholder="Groupe Girard"
+                className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-blue-300 focus:outline-none"
+              />
+            </div>
+          </div>
+          {error && <p className="text-[10px] text-red-500">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={createGroupe}
+              className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+            >
+              Créer
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCreating(false); setError("") }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

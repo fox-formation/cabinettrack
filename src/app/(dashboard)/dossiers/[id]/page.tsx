@@ -19,6 +19,7 @@ export default async function DossierDetailPage({ params }: PageProps) {
       collaborateursSecondaires: {
         include: { user: { select: { id: true, prenom: true, role: true } } },
       },
+      groupe: { select: { id: true, code: true, nom: true } },
       echeances: { orderBy: { dateEcheance: "asc" } },
       adressesEmail: { orderBy: { ordre: "asc" } },
     },

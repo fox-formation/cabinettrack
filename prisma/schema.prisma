@@ -24,6 +24,7 @@ model Tenant {
   cabinets       Cabinet[]
   collaborateurs User[]
   dossiers       Dossier[]
+  groupes        Groupe[]
   dossierEmails  DossierEmail[]
   echeances      Echeance[]
   alertes        Alerte[]
@@ -241,6 +242,9 @@ model Dossier {
   // 2561 (IFU)
   statut2561 String? @map("statut_2561")
 
+  // Groupe de dossiers
+  groupeId String? @map("groupe_id")
+
   // Statut du dossier (ACTIF / ARCHIVE)
   statut          String   @default("ACTIF")
   raisonArchivage String?  @map("raison_archivage")
@@ -253,6 +257,7 @@ model Dossier {
   tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cabinet                   Cabinet              @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
   collaborateurPrincipal    User?                @relation("CollaborateurPrincipal", fields: [collaborateurPrincipalId], references: [id])
+  groupe                    Groupe?              @relation(fields: [groupeId], references: [id])
   collaborateursSecondaires CollaborateurDossier[]
   echeances                 Echeance[]
   emails                    Email[]
@@ -264,7 +269,26 @@ model Dossier {
   @@index([tenantId])
   @@index([cabinetId])
   @@index([tenantId, raisonSociale])
+  @@index([groupeId])
   @@map("dossiers")
+}
+
+// ──────────────────────────────────────────────
+// Groupes de dossiers
+// ──────────────────────────────────────────────
+
+model Groupe {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  code      String   // Identifiant alphanumérique sans espaces (ex: "GRP-GIRARD")
+  nom       String   // Nom affiché (ex: "Groupe Girard")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossiers Dossier[]
+
+  @@unique([tenantId, code])
+  @@map("groupes")
 }
 
 // ──────────────────────────────────────────────

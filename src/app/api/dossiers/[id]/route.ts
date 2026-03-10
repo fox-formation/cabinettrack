@@ -11,6 +11,7 @@ const DOSSIER_INCLUDE = {
   collaborateursSecondaires: {
     include: { user: { select: { id: true, prenom: true, role: true } } },
   },
+  groupe: { select: { id: true, code: true, nom: true } },
   echeances: { orderBy: { dateEcheance: "asc" as const } },
   emails: { orderBy: { dateReception: "desc" as const }, take: 20 },
 }

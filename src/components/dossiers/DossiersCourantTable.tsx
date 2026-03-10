@@ -155,6 +155,7 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
   const [mensuel, setMensuel] = useState(false)
   const [activeMissions, setActiveMissions] = useState<Set<string>>(() => new Set(DEFAULT_MISSIONS))
   const [avancementMax, setAvancementMax] = useState<number | null>(null) // null = all, 0/25/50/75
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const toggleMission = useCallback((key: string) => {
     setActiveMissions((prev) => {
@@ -329,6 +330,16 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
     [patchBulk],
   )
 
+  // ── Multi-select helpers (used after displayDossiers is defined) ──
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   // ── Computed stats (reactive) ──
   const stats = useMemo(() => {
     let termines = 0, enCours = 0, nonDemarres = 0, enRetard = 0
@@ -397,6 +408,45 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
       return av <= avancementMax
     })
   }, [filteredDossiers, suivis, allPeriodesAndMeta, avancementMax])
+
+  // ── Multi-select bulk actions (after displayDossiers) ──
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === displayDossiers.length) return new Set()
+      return new Set(displayDossiers.map((d) => d.id))
+    })
+  }, [displayDossiers])
+
+  const bulkSetSelected = useCallback(
+    (value: string | null) => {
+      if (selectedIds.size === 0) return
+      const ids = Array.from(selectedIds)
+      setSuivis((prev) => {
+        const next = { ...prev }
+        for (const dossierId of ids) {
+          const meta = allPeriodesAndMeta.perDossier[dossierId]
+          if (!meta) continue
+          const curExMonth = getCurrentExerciseMonth(now, meta.m1Mois)
+          const cal = exerciseMonthToCalendar(curExMonth, meta.m1Mois, meta.exerciseYear)
+          const periode = fmtPeriode(cal.year, cal.month)
+
+          const dossierSuivis = { ...(next[dossierId] ?? {}) }
+          const current: SuiviCourantData = dossierSuivis[periode] ?? { ...EMPTY_SUIVI }
+          const fields: Record<string, string | null> = {}
+          const updated = { ...current }
+          for (const t of TACHES) {
+            updated[t.key] = value
+            fields[t.key] = value
+          }
+          dossierSuivis[periode] = updated
+          next[dossierId] = dossierSuivis
+          patchBulk(dossierId, periode, fields)
+        }
+        return next
+      })
+    },
+    [selectedIds, allPeriodesAndMeta, now, patchBulk],
+  )
 
   // ── Per-dossier helpers ──
   function getRetardMois(dossierId: string, paie: boolean): string[] {
@@ -502,11 +552,51 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="mb-2 flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2">
+          <span className="text-xs font-medium text-blue-700">
+            {selectedIds.size} dossier{selectedIds.size > 1 ? "s" : ""} sélectionné{selectedIds.size > 1 ? "s" : ""}
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="text-[10px] text-gray-500">Mois en cours →</span>
+          {(["QUART", "DEMI", "EN_COURS", "EFFECTUE"] as const).map((val) => (
+            <button
+              key={val}
+              onClick={() => bulkSetSelected(val)}
+              className="rounded border border-gray-200 bg-white px-2 py-1 text-[10px] font-medium text-gray-600 transition-colors hover:bg-gray-100"
+            >
+              {STATUT_PCT[val]}%
+            </button>
+          ))}
+          <button
+            onClick={() => bulkSetSelected(null)}
+            className="rounded border border-gray-200 bg-white px-2 py-1 text-[10px] font-medium text-red-500 transition-colors hover:bg-red-50"
+          >
+            Reset 0%
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-auto text-[10px] text-gray-400 hover:text-gray-600"
+          >
+            Désélectionner
+          </button>
+        </div>
+      )}
+
       {/* Matrix table */}
       <div className="overflow-x-auto rounded border border-gray-200 bg-white">
         <table className="w-full text-xs">
           <thead className="border-b border-gray-200 text-left text-[10px] font-medium uppercase tracking-wide text-gray-400">
             <tr>
+              <th className="px-1 py-2 text-center">
+                <input
+                  type="checkbox"
+                  checked={displayDossiers.length > 0 && selectedIds.size === displayDossiers.length}
+                  onChange={toggleSelectAll}
+                  className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                />
+              </th>
               <th className="sticky left-0 z-10 bg-white px-3 py-2">Dossier</th>
               <th className="px-2 py-2">Collab.</th>
               <th className="px-2 py-1">
@@ -536,7 +626,7 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={4 + columns.length} className="px-4 py-8 text-center">
+                <td colSpan={5 + columns.length} className="px-4 py-8 text-center">
                   <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
                 </td>
               </tr>
@@ -548,8 +638,16 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
                 const annualAv = getAnnualAvancement(d.id, d.paie)
                 const retards = getRetardMois(d.id, d.paie)
                 return (
-                  <tr key={d.id} className="group transition-colors hover:bg-gray-50/60">
-                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 group-hover:bg-gray-50/60">
+                  <tr key={d.id} className={`group transition-colors ${selectedIds.has(d.id) ? "bg-blue-50/40" : "hover:bg-gray-50/60"}`}>
+                    <td className="px-1 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(d.id)}
+                        onChange={() => toggleSelect(d.id)}
+                        className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                      />
+                    </td>
+                    <td className={`sticky left-0 z-10 px-3 py-1.5 ${selectedIds.has(d.id) ? "bg-blue-50/40" : "bg-white group-hover:bg-gray-50/60"}`}>
                       <Link href={`/dossiers/${d.id}`} className="font-medium text-gray-800 hover:text-blue-600 hover:underline text-xs">
                         {d.raisonSociale}
                       </Link>
