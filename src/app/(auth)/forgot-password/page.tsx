@@ -6,7 +6,13 @@ import { useState } from "react"
 import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 
-const ALLOWED_DOMAINS = ["fiduciaire-villeurbannaise.com", "finatec-expertise.com"]
+const ALLOWED_DOMAINS = [
+  "fiduciaire-villeurbannaise.com",
+  "fiduciaire-villeurbannaise.fr",
+  "fiduciaire.villeurbannaise.fr",
+  "finatec-expertise.com",
+  "finatec-expertise.fr",
+]
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")

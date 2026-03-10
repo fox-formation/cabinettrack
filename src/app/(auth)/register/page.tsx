@@ -6,7 +6,13 @@ import { useState } from "react"
 import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 
-const ALLOWED_DOMAINS = ["fiduciaire-villeurbannaise.com", "finatec-expertise.com"]
+const ALLOWED_DOMAINS = [
+  "fiduciaire-villeurbannaise.com",
+  "fiduciaire-villeurbannaise.fr",
+  "fiduciaire.villeurbannaise.fr",
+  "finatec-expertise.com",
+  "finatec-expertise.fr",
+]
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -39,19 +45,34 @@ export default function RegisterPage() {
     }
 
     setLoading(true)
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    )
-    const { error: signUpError } = await supabase.auth.signUp({ email, password })
-    setLoading(false)
+    try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      console.log("[register] SUPABASE_URL:", url)
+      console.log("[register] ANON_KEY present:", !!key)
 
-    if (signUpError) {
-      setError(signUpError.message)
-      return
+      if (!url || !key) {
+        setError("Configuration Supabase manquante. Contactez l'administrateur.")
+        setLoading(false)
+        return
+      }
+
+      const supabase = createClient(url, key)
+      const { error: signUpError } = await supabase.auth.signUp({ email, password })
+      setLoading(false)
+
+      if (signUpError) {
+        console.error("[register] signUpError:", signUpError)
+        setError(signUpError.message)
+        return
+      }
+
+      setSuccess(true)
+    } catch (err) {
+      console.error("[register] catch error:", err)
+      setError(err instanceof Error ? err.message : "Erreur inattendue lors de l'inscription.")
+      setLoading(false)
     }
-
-    setSuccess(true)
   }
 
   return (

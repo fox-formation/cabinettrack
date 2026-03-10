@@ -6,7 +6,10 @@ import { prisma } from "@/lib/db/prisma"
 
 const ALLOWED_DOMAINS = [
   "fiduciaire-villeurbannaise.com",
+  "fiduciaire-villeurbannaise.fr",
+  "fiduciaire.villeurbannaise.fr",
   "finatec-expertise.com",
+  "finatec-expertise.fr",
 ]
 
 function isAllowedDomain(email: string): boolean {
@@ -62,7 +65,11 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
+      // Credentials provider already validates domain in authorize()
+      if (account?.provider === "credentials") return true
+
+      // Azure AD: check domain
       const email = user.email
       if (!email || !isAllowedDomain(email)) {
         return "/login?error=unauthorized"

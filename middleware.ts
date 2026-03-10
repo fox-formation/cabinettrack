@@ -3,7 +3,10 @@ import { getToken } from "next-auth/jwt"
 
 const ALLOWED_DOMAINS = [
   "fiduciaire-villeurbannaise.com",
+  "fiduciaire-villeurbannaise.fr",
+  "fiduciaire.villeurbannaise.fr",
   "finatec-expertise.com",
+  "finatec-expertise.fr",
 ]
 
 export async function middleware(request: NextRequest) {
