@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 
 interface CollaborateurData {
   id: string
+  numero: string | null
   prenom: string
   nom: string
   email: string | null
@@ -233,6 +234,11 @@ export default function CollaborateursPage() {
                     <div>
                       <h3 className="font-semibold text-gray-900">
                         {c.prenom} {c.nom}
+                        {c.numero && (
+                          <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono font-medium text-gray-500">
+                            {c.numero}
+                          </span>
+                        )}
                       </h3>
                       {c.email && (
                         <p className="text-xs text-gray-500">{c.email}</p>

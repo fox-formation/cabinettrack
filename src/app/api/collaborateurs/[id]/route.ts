@@ -9,6 +9,7 @@ const VALID_STATUTS = new Set(["ACTIF", "ARCHIVE"])
 
 const USER_SELECT = {
   id: true,
+  numero: true,
   prenom: true,
   nom: true,
   email: true,
@@ -24,6 +25,12 @@ const USER_SELECT = {
     },
   },
 } as const
+
+function generateNumero(prenom: string, nom: string): string {
+  const p = (prenom || "").trim().charAt(0).toUpperCase()
+  const n = (nom || "").trim().substring(0, 2).toUpperCase()
+  return `${p}${n}`
+}
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -107,6 +114,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // Date fin de contrat
   if ("dateFinContrat" in body) {
     data.dateFinContrat = body.dateFinContrat ? new Date(body.dateFinContrat as string) : null
+  }
+
+  // Recalculate numero if prenom or nom changed
+  if ("prenom" in data || "nom" in data) {
+    const current = await prisma.user.findUnique({ where: { id }, select: { prenom: true, nom: true } })
+    if (current) {
+      const newPrenom = (data.prenom as string) ?? current.prenom
+      const newNom = (data.nom as string) ?? current.nom
+      data.numero = generateNumero(newPrenom, newNom)
+    }
   }
 
   if (Object.keys(data).length === 0) {

@@ -4,6 +4,12 @@ import { getTenantId } from "@/lib/tenant"
 
 export const dynamic = "force-dynamic"
 
+function generateNumero(prenom: string, nom: string): string {
+  const p = (prenom || "").trim().charAt(0).toUpperCase()
+  const n = (nom || "").trim().substring(0, 2).toUpperCase()
+  return `${p}${n}`
+}
+
 // GET /api/collaborateurs
 export async function GET() {
   const tenantId = await getTenantId()
@@ -12,6 +18,7 @@ export async function GET() {
     where: { tenantId },
     select: {
       id: true,
+      numero: true,
       prenom: true,
       nom: true,
       email: true,
@@ -58,11 +65,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const trimmedPrenom = prenom.trim()
+  const trimmedNom = nom?.trim() || ""
+  const numero = generateNumero(trimmedPrenom, trimmedNom)
+
   const user = await prisma.user.create({
     data: {
       tenantId,
-      prenom: prenom.trim(),
-      nom: nom?.trim() || "",
+      numero,
+      prenom: trimmedPrenom,
+      nom: trimmedNom,
       email: email?.trim() || null,
       role,
       dateArrivee: dateArrivee ? new Date(dateArrivee) : null,

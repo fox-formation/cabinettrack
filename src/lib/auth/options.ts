@@ -87,12 +87,13 @@ export const authOptions: NextAuthOptions = {
         if (email) {
           const dbUser = await prisma.user.findFirst({
             where: { email },
-            select: { id: true, tenantId: true, role: true },
+            select: { id: true, tenantId: true, role: true, numero: true, prenom: true, nom: true },
           })
           if (dbUser) {
             token.userId = dbUser.id
             token.tenantId = dbUser.tenantId
             token.role = dbUser.role
+            token.numero = dbUser.numero ?? `${dbUser.prenom.charAt(0)}${(dbUser.nom || "").substring(0, 2)}`.toUpperCase()
 
             // Link Microsoft ID if not already linked
             if (user.id && !await prisma.user.findUnique({ where: { microsoftId: user.id } })) {
@@ -114,6 +115,7 @@ export const authOptions: NextAuthOptions = {
         u.tenantId = token.tenantId ?? null
         u.role = token.role ?? null
         u.email = token.email ?? null
+        u.numero = token.numero ?? null
       }
       return session
     },

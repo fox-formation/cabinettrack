@@ -67,6 +67,7 @@ enum StatutCollab {
 model User {
   id             String       @id @default(uuid())
   tenantId       String       @map("tenant_id")
+  numero         String?      @map("numero")
   prenom         String
   nom            String       @default("")
   email          String?

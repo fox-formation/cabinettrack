@@ -1,9 +1,20 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
+import { useSession } from "next-auth/react"
 import Link from "next/link"
 import EtatPanel from "./EtatPanel"
 import { ETAPES_BILAN } from "@/lib/dossiers/avancement"
+
+function prefixComment(text: string, numero: string | null): string {
+  if (!text.trim()) return ""
+  const now = new Date()
+  const dd = String(now.getDate()).padStart(2, "0")
+  const mm = String(now.getMonth() + 1).padStart(2, "0")
+  const yy = String(now.getFullYear()).slice(-2)
+  const tag = numero || "??"
+  return `[${tag} ${dd}.${mm}.${yy}] ${text.trim()}`
+}
 
 interface DossierRow {
   id: string
@@ -29,6 +40,8 @@ const ROLE_SHORT: Record<string, string> = {
 }
 
 export default function DossiersTable({ dossiers: initialDossiers }: DossiersTableProps) {
+  const { data: session } = useSession()
+  const userNumero = (session?.user as Record<string, unknown> | undefined)?.numero as string | null ?? null
   const [panelDossierId, setPanelDossierId] = useState<string | null>(null)
   const [dossiers, setDossiers] = useState(initialDossiers)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -64,26 +77,36 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
 
   const applyBulkComment = useCallback(() => {
     if (selectedIds.size === 0) return
-    const text = bulkComment.trim() || null
+    const raw = bulkComment.trim()
+    if (!raw) return
+    const text = prefixComment(raw, userNumero)
     const ids = Array.from(selectedIds)
 
-    // Optimistic update
+    // Optimistic update — append to existing comment
     setDossiers((prev) =>
-      prev.map((d) => (selectedIds.has(d.id) ? { ...d, commentaireBilan: text } : d))
+      prev.map((d) => {
+        if (!selectedIds.has(d.id)) return d
+        const existing = d.commentaireBilan?.trim()
+        const newComment = existing ? `${existing}\n${text}` : text
+        return { ...d, commentaireBilan: newComment }
+      })
     )
 
     // Persist each
     for (const id of ids) {
+      const d = dossiers.find((x) => x.id === id)
+      const existing = d?.commentaireBilan?.trim()
+      const newComment = existing ? `${existing}\n${text}` : text
       fetch(`/api/dossiers/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commentaireBilan: text }),
+        body: JSON.stringify({ commentaireBilan: newComment }),
       })
     }
 
     setShowBulkComment(false)
     setBulkComment("")
-  }, [selectedIds, bulkComment])
+  }, [selectedIds, bulkComment, userNumero, dossiers])
 
   const clearBulkComments = useCallback(() => {
     if (selectedIds.size === 0) return
@@ -328,7 +351,10 @@ function EtapeMiniIndicators({ statuts }: { statuts: (string | null)[] }) {
 // ──────────────────────────────────────────────
 
 function CommentaireBilanCell({ dossierId, initial }: { dossierId: string; initial: string | null }) {
+  const { data: session } = useSession()
+  const numero = (session?.user as Record<string, unknown> | undefined)?.numero as string | null ?? null
   const [value, setValue] = useState(initial ?? "")
+  const [newText, setNewText] = useState("")
   const [editing, setEditing] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -350,20 +376,34 @@ function CommentaireBilanCell({ dossierId, initial }: { dossierId: string; initi
     [dossierId],
   )
 
+  const handleBlur = () => {
+    setEditing(false)
+    if (!newText.trim()) return
+    const prefixed = prefixComment(newText, numero)
+    const updated = value.trim() ? `${value.trim()}\n${prefixed}` : prefixed
+    setValue(updated)
+    setNewText("")
+    save(updated)
+  }
+
   if (editing) {
     return (
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          setEditing(false)
-          save(value)
-        }}
-        rows={2}
-        className="w-full min-w-[140px] rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-700 focus:border-gray-400 focus:outline-none"
-        placeholder="Commentaire..."
-      />
+      <div className="flex flex-col gap-1">
+        {value && (
+          <div className="whitespace-pre-wrap rounded bg-gray-50 px-2 py-1 text-[10px] text-gray-500 max-h-[60px] overflow-y-auto">
+            {value}
+          </div>
+        )}
+        <textarea
+          autoFocus
+          value={newText}
+          onChange={(e) => setNewText(e.target.value)}
+          onBlur={handleBlur}
+          rows={2}
+          className="w-full min-w-[140px] rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-700 focus:border-gray-400 focus:outline-none"
+          placeholder="Nouveau commentaire..."
+        />
+      </div>
     )
   }
 
