@@ -7,9 +7,13 @@
 
 import { prisma } from "@/lib/db/prisma"
 
-const OUTLOOK_TENANT = process.env.OUTLOOK_TENANT_ID || "common"
-const MICROSOFT_AUTH_URL = `https://login.microsoftonline.com/${OUTLOOK_TENANT}/oauth2/v2.0`
 const SCOPES = "Mail.Read Mail.ReadWrite offline_access User.Read"
+
+function getAuthBaseUrl(): string {
+  const tenant = process.env.OUTLOOK_TENANT_ID || "common"
+  console.log("[oauth] Using tenant:", tenant)
+  return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0`
+}
 
 function getClientId(): string {
   const id = process.env.OUTLOOK_CLIENT_ID
@@ -40,7 +44,7 @@ export function getAuthorizationUrl(state: string): string {
     scope: SCOPES,
     state,
   })
-  return `${MICROSOFT_AUTH_URL}/authorize?${params.toString()}`
+  return `${getAuthBaseUrl()}/authorize?${params.toString()}`
 }
 
 /**
@@ -61,7 +65,7 @@ export async function exchangeCodeForTokens(code: string): Promise<{
     scope: SCOPES,
   })
 
-  const res = await fetch(`${MICROSOFT_AUTH_URL}/token`, {
+  const res = await fetch(`${getAuthBaseUrl()}/token`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -104,7 +108,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     scope: SCOPES,
   })
 
-  const res = await fetch(`${MICROSOFT_AUTH_URL}/token`, {
+  const res = await fetch(`${getAuthBaseUrl()}/token`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

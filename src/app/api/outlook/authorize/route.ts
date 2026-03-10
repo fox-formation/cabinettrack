@@ -19,6 +19,7 @@ export async function GET() {
     ).toString("base64url")
 
     const authUrl = getAuthorizationUrl(state)
+    console.log("[outlook/authorize] Redirect URL:", authUrl)
     return NextResponse.redirect(authUrl)
   } catch (err) {
     console.error("[outlook/authorize] Error:", err)
