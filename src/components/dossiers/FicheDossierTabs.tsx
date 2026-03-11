@@ -1272,6 +1272,8 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
     return init
   })
   const [expandedCycle, setExpandedCycle] = useState<CycleKey | null>("GENERAL")
+  const [commentaireInterne, setCommentaireInterne] = useState(dossier.commentaireInterne ?? "")
+  const [commentaireBilan, setCommentaireBilan] = useState(dossier.commentaireBilan ?? "")
 
   const handleSave = useCallback(async (key: string) => {
     const updated = { ...existingNotes, ...notes }
@@ -1296,7 +1298,6 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
     for (const cycle of CYCLES_NOTES) {
       const content = notes[cycle.key]?.trim()
       lines.push(`${cycle.icone} ${cycle.label.toUpperCase()}`)
-      lines.push("─".repeat(40))
       lines.push(content || "(aucune note)")
       lines.push("")
       lines.push(separator)
@@ -1315,18 +1316,44 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
 
   return (
     <div className="space-y-6">
-      {/* Existing comments (read-only) */}
+      {/* Editable comments */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire interne</h3>
-          <div className="min-h-[80px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
-            {dossier.commentaireInterne || <span className="text-gray-400">Aucun commentaire</span>}
+          <textarea
+            value={commentaireInterne}
+            onChange={(e) => setCommentaireInterne(e.target.value)}
+            placeholder="Commentaire interne..."
+            rows={4}
+            className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <div className="mt-1 flex justify-end">
+            <button
+              onClick={() => patch({ commentaireInterne: commentaireInterne.trim() || null })}
+              disabled={saving}
+              className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? "..." : "Enregistrer"}
+            </button>
           </div>
         </div>
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire bilan en cours</h3>
-          <div className="min-h-[80px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
-            {dossier.commentaireBilan || <span className="text-gray-400">Aucun commentaire</span>}
+          <textarea
+            value={commentaireBilan}
+            onChange={(e) => setCommentaireBilan(e.target.value)}
+            placeholder="Commentaire bilan..."
+            rows={4}
+            className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <div className="mt-1 flex justify-end">
+            <button
+              onClick={() => patch({ commentaireBilan: commentaireBilan.trim() || null })}
+              disabled={saving}
+              className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? "..." : "Enregistrer"}
+            </button>
           </div>
         </div>
       </div>

@@ -77,7 +77,6 @@ export default function NotesModal({ dossierId, raisonSociale, onClose }: NotesM
     for (const cycle of CYCLES_NOTES) {
       const content = notes[cycle.key]?.trim()
       lines.push(`${cycle.icone} ${cycle.label.toUpperCase()}`)
-      lines.push("─".repeat(40))
       lines.push(content || "(aucune note)")
       lines.push("")
       lines.push(separator)
