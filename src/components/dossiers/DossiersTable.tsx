@@ -49,6 +49,9 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkComment, setBulkComment] = useState("")
   const [showBulkComment, setShowBulkComment] = useState(false)
+  const [focusedRow, setFocusedRow] = useState(-1)
+  const [focusedEtape, setFocusedEtape] = useState(0)
+  const tableRef = useRef<HTMLTableElement>(null)
   const now = new Date()
 
   // ── Batch save: accumulate étape changes, flush in one PATCH per dossier ──
@@ -91,6 +94,12 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
     }
   }, [flushDossier])
 
+  // ── Keyboard navigation ──
+  // Clickable étape indices (skip hasNote)
+  const clickableEtapes = useRef(
+    ETAPES_BILAN.map((e, i) => ({ index: i, hasNote: e.hasNote })).filter((e) => !e.hasNote).map((e) => e.index)
+  )
+
   useEffect(() => {
     setDossiers(initialDossiers)
   }, [initialDossiers])
@@ -124,6 +133,64 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
       })
     )
   }, [queueStatutPatch])
+
+  // ── Keyboard navigation ──
+  const KEY_TO_STATUT: Record<string, string | null> = { "0": null, "1": "QUART", "2": "DEMI", "3": "EN_COURS", "4": "EFFECTUE" }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (panelDossierId || notesDossierId) return
+
+      const ce = clickableEtapes.current
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setFocusedRow((prev) => {
+          const next = Math.min(prev + 1, dossiers.length - 1)
+          setFocusedEtape(0)
+          return next
+        })
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setFocusedRow((prev) => {
+          const next = Math.max(prev - 1, 0)
+          setFocusedEtape(0)
+          return next
+        })
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault()
+        setFocusedEtape((prev) => Math.min(prev + 1, ce.length - 1))
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault()
+        setFocusedEtape((prev) => Math.max(prev - 1, 0))
+      } else if (e.key === "Enter") {
+        e.preventDefault()
+        if (focusedRow >= 0 && focusedRow < dossiers.length) {
+          setPanelDossierId(dossiers[focusedRow].id)
+        }
+      } else if (e.key === "Escape") {
+        setFocusedRow(-1)
+      } else if (e.key in KEY_TO_STATUT && focusedRow >= 0 && focusedRow < dossiers.length) {
+        e.preventDefault()
+        const d = dossiers[focusedRow]
+        const etapeIdx = ce[focusedEtape]
+        if (etapeIdx !== undefined) {
+          handleStatutChange(d.id, etapeIdx, KEY_TO_STATUT[e.key])
+        }
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [dossiers, focusedRow, focusedEtape, panelDossierId, notesDossierId, handleStatutChange])
+
+  // Scroll focused row into view
+  useEffect(() => {
+    if (focusedRow < 0 || !tableRef.current) return
+    const rows = tableRef.current.querySelectorAll("tbody tr")
+    rows[focusedRow]?.scrollIntoView({ block: "nearest" })
+  }, [focusedRow])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -242,7 +309,7 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
       )}
 
       <div className="overflow-hidden rounded border border-gray-200 bg-white">
-        <table className="w-full text-xs">
+        <table ref={tableRef} className="w-full text-xs">
           <thead className="border-b border-gray-200 text-left text-[10px] font-medium uppercase tracking-wide text-gray-400">
             <tr>
               <th className="px-1 py-2 text-center">
@@ -268,15 +335,26 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {dossiers.map((d) => {
+            {dossiers.map((d, rowIdx) => {
               const av = d.avancement
               const dateLimite = d.datePrevueArreteBilan ? new Date(d.datePrevueArreteBilan) : null
               const joursRestants = dateLimite
                 ? Math.floor((dateLimite.getTime() - now.getTime()) / 86400000)
                 : null
+              const isFocused = rowIdx === focusedRow
 
               return (
-                <tr key={d.id} className={`transition-colors ${selectedIds.has(d.id) ? "bg-blue-50/40" : "hover:bg-gray-50/60"}`}>
+                <tr
+                  key={d.id}
+                  onClick={() => { setFocusedRow(rowIdx); setFocusedEtape(0) }}
+                  className={`transition-colors ${
+                    isFocused
+                      ? "bg-blue-50 ring-1 ring-inset ring-blue-300"
+                      : selectedIds.has(d.id)
+                        ? "bg-blue-50/40"
+                        : "hover:bg-gray-50/60"
+                  }`}
+                >
                   <td className="px-1 py-2 text-center">
                     <input
                       type="checkbox"
@@ -358,6 +436,7 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
                           dossierId={d.id}
                           statuts={d.etapeStatuts}
                           onStatutChange={handleStatutChange}
+                          focusedClickableIdx={isFocused ? focusedEtape : -1}
                         />
                       </div>
                     </button>
@@ -382,6 +461,16 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
           </tbody>
         </table>
       </div>
+
+      {focusedRow >= 0 && (
+        <div className="mt-1 flex items-center gap-3 text-[10px] text-gray-400">
+          <span><kbd className="rounded border border-gray-200 bg-gray-50 px-1">↑↓</kbd> naviguer</span>
+          <span><kbd className="rounded border border-gray-200 bg-gray-50 px-1">←→</kbd> étape</span>
+          <span><kbd className="rounded border border-gray-200 bg-gray-50 px-1">0-4</kbd> niveau</span>
+          <span><kbd className="rounded border border-gray-200 bg-gray-50 px-1">Entrée</kbd> panneau</span>
+          <span><kbd className="rounded border border-gray-200 bg-gray-50 px-1">Esc</kbd> quitter</span>
+        </div>
+      )}
 
       {panelDossierId && (
         <EtatPanel
@@ -422,11 +511,16 @@ function EtapeMiniIndicators({
   dossierId,
   statuts,
   onStatutChange,
+  focusedClickableIdx = -1,
 }: {
   dossierId: string
   statuts: (string | null)[]
   onStatutChange: (dossierId: string, index: number, newStatut: string | null) => void
+  focusedClickableIdx?: number
 }) {
+  // Map clickable index back to absolute index
+  const clickableIndices = ETAPES_BILAN.map((e, i) => ({ i, hasNote: e.hasNote })).filter((e) => !e.hasNote).map((e) => e.i)
+  const focusedAbsIdx = focusedClickableIdx >= 0 ? clickableIndices[focusedClickableIdx] ?? -1 : -1
   const handleClick = useCallback(
     (e: React.MouseEvent, index: number) => {
       e.stopPropagation()
@@ -464,6 +558,8 @@ function EtapeMiniIndicators({
         const statutLabel = s ? STATUT_LABELS[s] ?? s : "0%"
         const nextLabel = isNote ? "" : STATUT_LABELS[nextStatut(s) ?? ""] ?? "0%"
 
+        const isKbFocused = i === focusedAbsIdx
+
         return (
           <div
             key={i}
@@ -472,7 +568,7 @@ function EtapeMiniIndicators({
               isNote
                 ? "cursor-default"
                 : "cursor-pointer transition-all hover:scale-125 hover:ring-1 hover:ring-blue-400"
-            }`}
+            } ${isKbFocused ? "scale-150 ring-2 ring-blue-500" : ""}`}
             title={isNote ? `${label} (note)` : `${label}: ${statutLabel} → clic: ${nextLabel}`}
           />
         )
