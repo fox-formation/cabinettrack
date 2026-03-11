@@ -51,6 +51,46 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
   const [showBulkComment, setShowBulkComment] = useState(false)
   const now = new Date()
 
+  // ── Batch save: accumulate étape changes, flush in one PATCH per dossier ──
+  const pendingRef = useRef<Record<string, Record<string, string | null>>>({})
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const flushDossier = useCallback((dossierId: string) => {
+    const changes = pendingRef.current[dossierId]
+    if (!changes || Object.keys(changes).length === 0) return
+    const body = { ...changes }
+    delete pendingRef.current[dossierId]
+    delete timersRef.current[dossierId]
+    fetch(`/api/dossiers/${dossierId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  }, [])
+
+  const queueStatutPatch = useCallback((dossierId: string, cle: string, value: string | null) => {
+    if (!pendingRef.current[dossierId]) pendingRef.current[dossierId] = {}
+    pendingRef.current[dossierId][cle] = value
+    // Reset the debounce timer for this dossier
+    if (timersRef.current[dossierId]) clearTimeout(timersRef.current[dossierId])
+    timersRef.current[dossierId] = setTimeout(() => flushDossier(dossierId), 2000)
+  }, [flushDossier])
+
+  // Flush all pending on unmount or page leave
+  useEffect(() => {
+    const flushAll = () => {
+      for (const id of Object.keys(pendingRef.current)) {
+        if (timersRef.current[id]) clearTimeout(timersRef.current[id])
+        flushDossier(id)
+      }
+    }
+    window.addEventListener("beforeunload", flushAll)
+    return () => {
+      window.removeEventListener("beforeunload", flushAll)
+      flushAll()
+    }
+  }, [flushDossier])
+
   useEffect(() => {
     setDossiers(initialDossiers)
   }, [initialDossiers])
@@ -62,6 +102,9 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
   }, [])
 
   const handleStatutChange = useCallback((dossierId: string, etapeIndex: number, newStatut: string | null) => {
+    const etape = ETAPES_BILAN[etapeIndex]
+    if (etape) queueStatutPatch(dossierId, etape.cle, newStatut)
+
     setDossiers((prev) =>
       prev.map((d) => {
         if (d.id !== dossierId) return d
@@ -70,17 +113,17 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
         // Recalculate avancement locally
         let total = 0
         for (let i = 0; i < ETAPES_BILAN.length; i++) {
-          const etape = ETAPES_BILAN[i]
-          if (etape.poids === 0) continue
+          const e = ETAPES_BILAN[i]
+          if (e.poids === 0) continue
           const val = newStatuts[i]
           if (!val) continue
           const ratio = val === "EFFECTUE" ? 1 : val === "EN_COURS" ? 0.75 : val === "DEMI" ? 0.5 : val === "QUART" ? 0.25 : 0
-          total += etape.poids * ratio
+          total += e.poids * ratio
         }
         return { ...d, etapeStatuts: newStatuts, avancement: Math.round(total) }
       })
     )
-  }, [])
+  }, [queueStatutPatch])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -388,18 +431,11 @@ function EtapeMiniIndicators({
     (e: React.MouseEvent, index: number) => {
       e.stopPropagation()
       const etape = ETAPES_BILAN[index]
-      if (!etape || etape.hasNote) return // Don't cycle note fields
+      if (!etape || etape.hasNote) return
 
       const current = statuts[index]
       const next = nextStatut(current)
       onStatutChange(dossierId, index, next)
-
-      // PATCH the dossier
-      fetch(`/api/dossiers/${dossierId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [etape.cle]: next }),
-      })
     },
     [dossierId, statuts, onStatutChange],
   )
