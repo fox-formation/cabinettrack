@@ -58,6 +58,7 @@ export function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
     acompteCvae09: null,
     soldeCvae: null,
     statut2561: null,
+    notesCycles: null,
     groupeId: null,
     statut: "ACTIF",
     raisonArchivage: null,

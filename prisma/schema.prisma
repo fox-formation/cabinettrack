@@ -260,6 +260,9 @@ model Dossier {
   // 2561 (IFU)
   statut2561 String? @map("statut_2561")
 
+  // Notes par cycle comptable (JSONB : { "GENERAL": "...", "TRESORERIE": "...", ... })
+  notesCycles Json? @map("notes_cycles") @db.JsonB
+
   // Groupe de dossiers
   groupeId String? @map("groupe_id")
 

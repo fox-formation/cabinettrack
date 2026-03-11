@@ -1247,19 +1247,123 @@ function TabEcheances({ echeances }: { echeances: Echeance[] }) {
 // Tab Notes
 // ──────────────────────────────────────────────
 
+const CYCLES_NOTES = [
+  { key: "GENERAL", label: "Note Générale", icone: "📋" },
+  { key: "TRESORERIE", label: "Trésorerie", icone: "🏦" },
+  { key: "ACHATS_FOURNISSEURS", label: "Achats et Fournisseurs", icone: "🛒" },
+  { key: "CHARGES_EXTERNES", label: "Charges Externes", icone: "💳" },
+  { key: "VENTES_CLIENTS", label: "Ventes et Clients", icone: "💰" },
+  { key: "STOCK", label: "Stock", icone: "📦" },
+  { key: "IMMOBILISATIONS", label: "Immobilisations", icone: "🏗️" },
+  { key: "SOCIAL_PAIE", label: "Social et Paie", icone: "👥" },
+  { key: "ETAT", label: "État", icone: "🏛️" },
+  { key: "CAPITAUX_PROPRES", label: "Capitaux Propres", icone: "📊" },
+  { key: "AUTRES", label: "Autres", icone: "📝" },
+] as const
+
+type CycleKey = (typeof CYCLES_NOTES)[number]["key"]
+
 function TabNotes({ dossier }: { dossier: DossierFull }) {
+  const { patch, saving } = usePatchDossier(dossier.id)
+  const existingNotes = (dossier.notesCycles ?? {}) as Record<string, string>
+  const [notes, setNotes] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {}
+    for (const c of CYCLES_NOTES) init[c.key] = existingNotes[c.key] ?? ""
+    return init
+  })
+  const [expandedCycle, setExpandedCycle] = useState<CycleKey | null>("GENERAL")
+
+  const handleSave = useCallback(async (key: string) => {
+    const updated = { ...existingNotes, ...notes }
+    // Remove empty notes
+    for (const k of Object.keys(updated)) {
+      if (!updated[k]?.trim()) delete updated[k]
+    }
+    await patch({ notesCycles: Object.keys(updated).length > 0 ? updated : null })
+  }, [notes, existingNotes, patch])
+
+  const hasContent = (key: string) => !!notes[key]?.trim()
+
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire interne</h3>
-        <div className="min-h-[100px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
-          {dossier.commentaireInterne || <span className="text-gray-400">Aucun commentaire</span>}
+      {/* Existing comments (read-only) */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire interne</h3>
+          <div className="min-h-[80px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
+            {dossier.commentaireInterne || <span className="text-gray-400">Aucun commentaire</span>}
+          </div>
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire bilan en cours</h3>
+          <div className="min-h-[80px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
+            {dossier.commentaireBilan || <span className="text-gray-400">Aucun commentaire</span>}
+          </div>
         </div>
       </div>
+
+      {/* Cycle-based notes */}
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-gray-700">Commentaire bilan en cours</h3>
-        <div className="min-h-[100px] whitespace-pre-wrap rounded-md border bg-white p-4 text-sm text-gray-700">
-          {dossier.commentaireBilan || <span className="text-gray-400">Aucun commentaire</span>}
+        <h3 className="mb-3 text-base font-semibold text-gray-900">Notes par cycle comptable</h3>
+        <div className="space-y-2">
+          {CYCLES_NOTES.map((cycle) => {
+            const isExpanded = expandedCycle === cycle.key
+            const filled = hasContent(cycle.key)
+            return (
+              <div
+                key={cycle.key}
+                className={`rounded-lg border transition-colors ${
+                  isExpanded ? "border-blue-200 bg-blue-50/30" : filled ? "border-green-200 bg-green-50/20" : "border-gray-200"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpandedCycle(isExpanded ? null : cycle.key)}
+                  className="flex w-full items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{cycle.icone}</span>
+                    <span className="text-sm font-medium text-gray-800">{cycle.label}</span>
+                    {filled && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                        renseigné
+                      </span>
+                    )}
+                  </div>
+                  <svg
+                    className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {isExpanded && (
+                  <div className="border-t px-4 py-3">
+                    <textarea
+                      value={notes[cycle.key] ?? ""}
+                      onChange={(e) =>
+                        setNotes((prev) => ({ ...prev, [cycle.key]: e.target.value }))
+                      }
+                      placeholder={`Notes pour ${cycle.label}...`}
+                      rows={4}
+                      className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={() => handleSave(cycle.key)}
+                        disabled={saving}
+                        className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {saving ? "Enregistrement..." : "Enregistrer"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
