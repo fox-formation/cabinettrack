@@ -32,6 +32,7 @@ model Tenant {
   suiviCourants  SuiviCourant[]
   suiviRevisions SuiviRevision[]
   importHistories ImportHistory[]
+  travauxSessions TravauxSession[]
   outlookConnection OutlookConnection?
 
   @@map("tenants")
@@ -282,6 +283,7 @@ model Dossier {
   alertes                   Alerte[]
   suiviCourants             SuiviCourant[]
   suiviRevisions            SuiviRevision[]
+  travauxSessions           TravauxSession[]
 
   @@index([tenantId])
   @@index([cabinetId])
@@ -540,4 +542,25 @@ model ImportHistory {
 
   @@index([tenantId])
   @@map("import_history")
+}
+
+// ──────────────────────────────────────────────
+// Sessions Travaux IA (logging des utilisations)
+// ──────────────────────────────────────────────
+
+model TravauxSession {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  dossierId   String   @map("dossier_id")
+  outil       String   // ex: "DOSSIER_TRAVAIL"
+  preparateur String   // initiales du collaborateur
+  statut      String   @default("EN_COURS") // EN_COURS | TERMINE | ERREUR
+  resultat    Json?    @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dossierId])
+  @@map("travaux_sessions")
 }

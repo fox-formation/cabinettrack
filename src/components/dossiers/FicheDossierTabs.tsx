@@ -5,6 +5,9 @@ import type { Dossier, Echeance, User, CollaborateurDossier, Cabinet, DossierEma
 import GrilleTVA from "./GrilleTVA"
 import BarreAvancement from "./BarreAvancement"
 import { useToast } from "@/components/ui/Toast"
+import OutilCard from "@/components/travaux/OutilCard"
+import AgentDossierModal from "@/components/travaux/AgentDossierModal"
+import { useSession } from "next-auth/react"
 
 type DossierFull = Dossier & {
   cabinet: Pick<Cabinet, "nom">
@@ -26,6 +29,7 @@ const TABS = [
   { id: "tva", label: "TVA" },
   { id: "is", label: "IS & Impôts" },
   { id: "echeances", label: "Échéances" },
+  { id: "travaux", label: "Travaux" },
   { id: "notes", label: "Notes" },
 ] as const
 
@@ -139,6 +143,7 @@ export default function FicheDossierTabs({ dossier: initialDossier, collaborateu
           <TabIS dossier={dossier} onUpdate={handleDossierUpdate} />
         )}
         {activeTab === "echeances" && <TabEcheances echeances={dossier.echeances} />}
+        {activeTab === "travaux" && <TabTravaux dossier={dossier} />}
         {activeTab === "notes" && <TabNotes dossier={dossier} />}
       </div>
     </div>
@@ -1257,6 +1262,64 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
           {dossier.commentaireBilan || <span className="text-gray-400">Aucun commentaire</span>}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Tab Travaux (Outils IA)
+// ──────────────────────────────────────────────
+
+function TabTravaux({ dossier }: { dossier: DossierFull }) {
+  const [agentModalOpen, setAgentModalOpen] = useState(false)
+  const { data: session } = useSession()
+
+  const userNumero = (session?.user as Record<string, unknown> | undefined)?.numero as string ?? "N/A"
+  const dateArrete = dossier.dateArreteBilan ?? dossier.dateClotureExercice
+  const dateArreteFmt = dateArrete
+    ? new Date(dateArrete).toLocaleDateString("fr-FR")
+    : null
+
+  const OUTILS = [
+    {
+      id: "dossier-travail",
+      nom: "Agent Dossier de Travail",
+      description: "Analyse une balance CSV et génère un Excel structuré par cycle comptable (immobilisations, clients, fournisseurs, trésorerie...)",
+      icone: "📊",
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="mb-1 text-base font-semibold text-gray-900">Outils d&apos;analyse IA</h3>
+        <p className="mb-4 text-sm text-gray-500">
+          Lancez un agent IA avec le contexte du dossier pré-rempli.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {OUTILS.map((outil) => (
+          <OutilCard
+            key={outil.id}
+            nom={outil.nom}
+            description={outil.description}
+            icone={outil.icone}
+            onLancer={() => {
+              if (outil.id === "dossier-travail") setAgentModalOpen(true)
+            }}
+          />
+        ))}
+      </div>
+
+      <AgentDossierModal
+        open={agentModalOpen}
+        onClose={() => setAgentModalOpen(false)}
+        dossierId={dossier.id}
+        nomClient={dossier.raisonSociale}
+        dateArrete={dateArreteFmt}
+        preparateur={userNumero}
+      />
     </div>
   )
 }
