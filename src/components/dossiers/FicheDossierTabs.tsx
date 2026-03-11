@@ -1284,6 +1284,35 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
 
   const hasContent = (key: string) => !!notes[key]?.trim()
 
+  const handleExportTxt = useCallback(() => {
+    const separator = "═".repeat(60)
+    const lines: string[] = [
+      `NOTES DU DOSSIER — ${dossier.raisonSociale}`,
+      `Date d'export : ${new Date().toLocaleDateString("fr-FR")}`,
+      separator,
+      "",
+    ]
+
+    for (const cycle of CYCLES_NOTES) {
+      const content = notes[cycle.key]?.trim()
+      lines.push(`${cycle.icone} ${cycle.label.toUpperCase()}`)
+      lines.push("─".repeat(40))
+      lines.push(content || "(aucune note)")
+      lines.push("")
+      lines.push(separator)
+      lines.push("")
+    }
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const safeName = dossier.raisonSociale.replace(/[^a-zA-Z0-9À-ÿ\s-]/g, "").slice(0, 30)
+    a.download = `Notes_${safeName}_${new Date().toISOString().slice(0, 10)}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [notes, dossier.raisonSociale])
+
   return (
     <div className="space-y-6">
       {/* Existing comments (read-only) */}
@@ -1304,7 +1333,18 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
 
       {/* Cycle-based notes */}
       <div>
-        <h3 className="mb-3 text-base font-semibold text-gray-900">Notes par cycle comptable</h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">Notes par cycle comptable</h3>
+          <button
+            onClick={handleExportTxt}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Exporter les informations du dossier
+          </button>
+        </div>
         <div className="space-y-2">
           {CYCLES_NOTES.map((cycle) => {
             const isExpanded = expandedCycle === cycle.key

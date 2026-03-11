@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import EtatPanel from "./EtatPanel"
+import NotesModal from "./NotesModal"
 import { ETAPES_BILAN } from "@/lib/dossiers/avancement"
 
 function prefixComment(text: string, numero: string | null): string {
@@ -43,6 +44,7 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
   const { data: session } = useSession()
   const userNumero = (session?.user as Record<string, unknown> | undefined)?.numero as string | null ?? null
   const [panelDossierId, setPanelDossierId] = useState<string | null>(null)
+  const [notesDossierId, setNotesDossierId] = useState<string | null>(null)
   const [dossiers, setDossiers] = useState(initialDossiers)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkComment, setBulkComment] = useState("")
@@ -194,6 +196,11 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
               <th className="px-3 py-2">Date limite</th>
               <th className="px-3 py-2">Avancement</th>
               <th className="px-3 py-2">Commentaire bilan</th>
+              <th className="px-1 py-2 text-center" title="Notes par cycle">
+                <svg className="mx-auto h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -290,6 +297,17 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
                   <td className="px-3 py-2">
                     <CommentaireBilanCell dossierId={d.id} initial={d.commentaireBilan} />
                   </td>
+                  <td className="px-1 py-2 text-center">
+                    <button
+                      onClick={() => setNotesDossierId(d.id)}
+                      className="rounded p-1 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                      title="Notes par cycle"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               )
             })}
@@ -302,6 +320,14 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
           dossierId={panelDossierId}
           onClose={() => setPanelDossierId(null)}
           onAvancementChange={handleAvancementChange}
+        />
+      )}
+
+      {notesDossierId && (
+        <NotesModal
+          dossierId={notesDossierId}
+          raisonSociale={dossiers.find((d) => d.id === notesDossierId)?.raisonSociale ?? ""}
+          onClose={() => setNotesDossierId(null)}
         />
       )}
     </>
