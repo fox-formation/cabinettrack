@@ -61,6 +61,27 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
     )
   }, [])
 
+  const handleStatutChange = useCallback((dossierId: string, etapeIndex: number, newStatut: string | null) => {
+    setDossiers((prev) =>
+      prev.map((d) => {
+        if (d.id !== dossierId) return d
+        const newStatuts = [...d.etapeStatuts]
+        newStatuts[etapeIndex] = newStatut
+        // Recalculate avancement locally
+        let total = 0
+        for (let i = 0; i < ETAPES_BILAN.length; i++) {
+          const etape = ETAPES_BILAN[i]
+          if (etape.poids === 0) continue
+          const val = newStatuts[i]
+          if (!val) continue
+          const ratio = val === "EFFECTUE" ? 1 : val === "EN_COURS" ? 0.75 : val === "DEMI" ? 0.5 : val === "QUART" ? 0.25 : 0
+          total += etape.poids * ratio
+        }
+        return { ...d, etapeStatuts: newStatuts, avancement: Math.round(total) }
+      })
+    )
+  }, [])
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -290,7 +311,11 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
                         }`}>{av}%</span>
                       </div>
                       <div className="mt-0.5">
-                        <EtapeMiniIndicators statuts={d.etapeStatuts} />
+                        <EtapeMiniIndicators
+                          dossierId={d.id}
+                          statuts={d.etapeStatuts}
+                          onStatutChange={handleStatutChange}
+                        />
                       </div>
                     </button>
                   </td>
@@ -336,11 +361,54 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
 
 // ──────────────────────────────────────────────
 
-function EtapeMiniIndicators({ statuts }: { statuts: (string | null)[] }) {
+const STATUT_CYCLE: (string | null)[] = [null, "QUART", "DEMI", "EN_COURS", "EFFECTUE"]
+
+function nextStatut(current: string | null): string | null {
+  const idx = STATUT_CYCLE.indexOf(current)
+  return STATUT_CYCLE[(idx + 1) % STATUT_CYCLE.length]
+}
+
+const STATUT_LABELS: Record<string, string> = {
+  QUART: "25%",
+  DEMI: "50%",
+  EN_COURS: "75%",
+  EFFECTUE: "100%",
+}
+
+function EtapeMiniIndicators({
+  dossierId,
+  statuts,
+  onStatutChange,
+}: {
+  dossierId: string
+  statuts: (string | null)[]
+  onStatutChange: (dossierId: string, index: number, newStatut: string | null) => void
+}) {
+  const handleClick = useCallback(
+    (e: React.MouseEvent, index: number) => {
+      e.stopPropagation()
+      const etape = ETAPES_BILAN[index]
+      if (!etape || etape.hasNote) return // Don't cycle note fields
+
+      const current = statuts[index]
+      const next = nextStatut(current)
+      onStatutChange(dossierId, index, next)
+
+      // PATCH the dossier
+      fetch(`/api/dossiers/${dossierId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [etape.cle]: next }),
+      })
+    },
+    [dossierId, statuts, onStatutChange],
+  )
+
   return (
     <div className="flex gap-px">
       {statuts.map((s, i) => {
-        const isNote = ETAPES_BILAN[i]?.hasNote
+        const etape = ETAPES_BILAN[i]
+        const isNote = etape?.hasNote
         let bg: string
         if (isNote) {
           bg = "bg-amber-300"
@@ -353,20 +421,23 @@ function EtapeMiniIndicators({ statuts }: { statuts: (string | null)[] }) {
         } else if (s === "QUART") {
           bg = "bg-gray-300"
         } else {
-          bg = "bg-gray-150"
-          return (
-            <div
-              key={i}
-              className="h-2.5 w-1 rounded-[1px] bg-gray-200"
-              title={ETAPES_BILAN[i]?.label}
-            />
-          )
+          bg = "bg-gray-200"
         }
+
+        const label = etape?.label ?? ""
+        const statutLabel = s ? STATUT_LABELS[s] ?? s : "0%"
+        const nextLabel = isNote ? "" : STATUT_LABELS[nextStatut(s) ?? ""] ?? "0%"
+
         return (
           <div
             key={i}
-            className={`h-2.5 w-1 rounded-[1px] ${bg}`}
-            title={ETAPES_BILAN[i]?.label}
+            onClick={(e) => handleClick(e, i)}
+            className={`h-3.5 w-2 rounded-[2px] ${bg} ${
+              isNote
+                ? "cursor-default"
+                : "cursor-pointer transition-all hover:scale-125 hover:ring-1 hover:ring-blue-400"
+            }`}
+            title={isNote ? `${label} (note)` : `${label}: ${statutLabel} → clic: ${nextLabel}`}
           />
         )
       })}
