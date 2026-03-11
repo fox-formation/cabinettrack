@@ -1,133 +1,173 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 
-interface AlerteDossier {
+interface EcheanceDossier {
   id: string
   raisonSociale: string
+  collaborateurPrincipal: { id: string; prenom: string } | null
+  cabinet: { nom: string }
 }
 
-interface AlerteEcheance {
+interface EcheanceRetard {
   id: string
   libelle: string
+  type: "FISCALE" | "SOCIALE" | "JURIDIQUE"
   dateEcheance: string
+  statut: "A_FAIRE" | "EN_COURS"
+  dossier: EcheanceDossier
 }
 
-interface AlerteData {
-  id: string
-  titre: string
-  message: string
-  niveau: "INFO" | "WARNING" | "URGENT" | "CRITIQUE"
-  lue: boolean
-  acquittee: boolean
-  dateAlerte: string
-  dossier: AlerteDossier | null
-  echeance: AlerteEcheance | null
+// Obligation categories for columns
+const OBLIGATION_COLS = [
+  { key: "TVA", label: "TVA", match: (l: string) => l.includes("TVA") || l.includes("CA3") || l.includes("CA12") },
+  { key: "IS", label: "IS / Liasse", match: (l: string) => l.includes("IS") || l.includes("Liasse") || l.includes("2065") },
+  { key: "AGO", label: "AGO", match: (l: string) => l.includes("AGO") || l.includes("Approbation") },
+  { key: "DAS2", label: "DAS 2", match: (l: string) => l.includes("DAS") },
+  { key: "CVAE", label: "CVAE", match: (l: string) => l.includes("CVAE") },
+  { key: "CFE", label: "CFE", match: (l: string) => l.includes("CFE") },
+  { key: "GREFFE", label: "Greffe", match: (l: string) => l.includes("Greffe") || l.includes("greffe") || l.includes("Dépôt") },
+  { key: "2572", label: "2572", match: (l: string) => l.includes("2572") },
+  { key: "AUTRE", label: "Autres", match: () => true },
+] as const
+
+function classifyEcheance(libelle: string): string {
+  for (const col of OBLIGATION_COLS) {
+    if (col.key !== "AUTRE" && col.match(libelle)) return col.key
+  }
+  return "AUTRE"
 }
 
-const NIVEAU_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
-  INFO:     { label: "Info",     bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-200" },
-  WARNING:  { label: "Warning",  bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200" },
-  URGENT:   { label: "Urgent",   bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
-  CRITIQUE: { label: "Critique", bg: "bg-red-50",    text: "text-red-700",    border: "border-red-200" },
+function joursRetard(dateEcheance: string): number {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const d = new Date(dateEcheance)
+  d.setHours(0, 0, 0, 0)
+  return Math.floor((now.getTime() - d.getTime()) / 86400000)
+}
+
+interface DossierRow {
+  dossierId: string
+  raisonSociale: string
+  collaborateur: string
+  cabinet: string
+  echeances: Map<string, EcheanceRetard[]>
+  maxRetard: number
 }
 
 export default function AlertesPage() {
-  const [alertes, setAlertes] = useState<AlerteData[]>([])
+  const [echeances, setEcheances] = useState<EcheanceRetard[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtreNiveau, setFiltreNiveau] = useState("")
-  const [filtreStatut, setFiltreStatut] = useState("")
-  const [filtreDossier, setFiltreDossier] = useState("")
+  const [filtreType, setFiltreType] = useState("")
+  const [filtreRetardOnly, setFiltreRetardOnly] = useState(false)
 
-  const fetchAlertes = useCallback(async () => {
+  const fetchRetards = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (filtreNiveau) params.set("niveau", filtreNiveau)
-    if (filtreStatut === "acquittee") params.set("acquittee", "true")
-    if (filtreStatut === "en_attente") params.set("acquittee", "false")
-
-    const res = await fetch(`/api/alertes?${params}`)
-    if (res.ok) {
-      const data: AlerteData[] = await res.json()
-      setAlertes(data)
-    }
+    try {
+      const res = await fetch("/api/echeances/retards")
+      if (res.ok) {
+        const data: EcheanceRetard[] = await res.json()
+        setEcheances(data)
+      }
+    } catch { /* empty */ }
     setLoading(false)
-  }, [filtreNiveau, filtreStatut])
+  }, [])
 
-  useEffect(() => { fetchAlertes() }, [fetchAlertes])
+  useEffect(() => { fetchRetards() }, [fetchRetards])
 
-  const acquitter = async (id: string) => {
-    const res = await fetch(`/api/alertes/${id}`, {
+  const markAsFait = useCallback(async (echeanceId: string) => {
+    setEcheances((prev) => prev.filter((e) => e.id !== echeanceId))
+    await fetch(`/api/echeances/${echeanceId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ acquittee: true, lue: true }),
+      body: JSON.stringify({ statut: "FAIT" }),
     })
-    if (res.ok) {
-      setAlertes((prev) => prev.map((a) => a.id === id ? { ...a, acquittee: true, lue: true } : a))
+  }, [])
+
+  // Build dossier rows
+  const dossierMap = new Map<string, DossierRow>()
+  for (const ech of echeances) {
+    const jours = joursRetard(ech.dateEcheance)
+    if (filtreRetardOnly && jours < 0) continue
+    if (filtreType && ech.type !== filtreType) continue
+
+    const key = ech.dossier.id
+    if (!dossierMap.has(key)) {
+      dossierMap.set(key, {
+        dossierId: ech.dossier.id,
+        raisonSociale: ech.dossier.raisonSociale,
+        collaborateur: ech.dossier.collaborateurPrincipal?.prenom ?? "-",
+        cabinet: ech.dossier.cabinet.nom,
+        echeances: new Map(),
+        maxRetard: 0,
+      })
     }
+    const row = dossierMap.get(key)!
+    const category = classifyEcheance(ech.libelle)
+    if (!row.echeances.has(category)) row.echeances.set(category, [])
+    row.echeances.get(category)!.push(ech)
+    if (jours > row.maxRetard) row.maxRetard = jours
   }
 
-  // Dossiers uniques pour le filtre
-  const dossiersUniques = Array.from(
-    new Map(
-      alertes
-        .filter((a) => a.dossier)
-        .map((a) => [a.dossier!.id, a.dossier!])
-    ).values()
-  ).sort((a, b) => a.raisonSociale.localeCompare(b.raisonSociale))
+  const rows = Array.from(dossierMap.values()).sort((a, b) => b.maxRetard - a.maxRetard)
 
-  const alertesFiltrees = filtreDossier
-    ? alertes.filter((a) => a.dossier?.id === filtreDossier)
-    : alertes
+  const totalRetard = echeances.filter((e) => joursRetard(e.dateEcheance) > 0).length
+  const totalAVenir = echeances.filter((e) => joursRetard(e.dateEcheance) <= 0).length
 
   return (
     <main className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Alertes</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Alertes — Retards et Échéances</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {alertesFiltrees.length} alerte{alertesFiltrees.length !== 1 ? "s" : ""}
-          {filtreStatut === "en_attente" ? " en attente" : ""}
+          {totalRetard} en retard · {totalAVenir} à venir · {rows.length} dossier{rows.length > 1 ? "s" : ""} concerné{rows.length > 1 ? "s" : ""}
         </p>
       </div>
 
-      {/* Filtres */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {/* Stats */}
+      <div className="mb-6 grid grid-cols-3 gap-4">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-xs font-medium text-red-600">En retard</p>
+          <p className="mt-1 text-2xl font-bold text-red-700">{totalRetard}</p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-medium text-amber-600">À venir (7j)</p>
+          <p className="mt-1 text-2xl font-bold text-amber-700">
+            {echeances.filter((e) => { const j = joursRetard(e.dateEcheance); return j <= 0 && j >= -7 }).length}
+          </p>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-medium text-blue-600">Total échéances ouvertes</p>
+          <p className="mt-1 text-2xl font-bold text-blue-700">{echeances.length}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
-          value={filtreNiveau}
-          onChange={(e) => setFiltreNiveau(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          value={filtreType}
+          onChange={(e) => setFiltreType(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
         >
-          <option value="">Tous les niveaux</option>
-          <option value="INFO">Info</option>
-          <option value="WARNING">Warning</option>
-          <option value="URGENT">Urgent</option>
-          <option value="CRITIQUE">Critique</option>
+          <option value="">Tous les types</option>
+          <option value="FISCALE">Fiscale</option>
+          <option value="SOCIALE">Sociale</option>
+          <option value="JURIDIQUE">Juridique</option>
         </select>
 
-        <select
-          value={filtreStatut}
-          onChange={(e) => setFiltreStatut(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="">Tous les statuts</option>
-          <option value="en_attente">En attente</option>
-          <option value="acquittee">Acquittée</option>
-        </select>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={filtreRetardOnly}
+            onChange={(e) => setFiltreRetardOnly(e.target.checked)}
+            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+          />
+          Retards uniquement
+        </label>
 
-        <select
-          value={filtreDossier}
-          onChange={(e) => setFiltreDossier(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="">Tous les dossiers</option>
-          {dossiersUniques.map((d) => (
-            <option key={d.id} value={d.id}>{d.raisonSociale}</option>
-          ))}
-        </select>
-
-        {(filtreNiveau || filtreStatut || filtreDossier) && (
+        {(filtreType || filtreRetardOnly) && (
           <button
-            onClick={() => { setFiltreNiveau(""); setFiltreStatut(""); setFiltreDossier("") }}
+            onClick={() => { setFiltreType(""); setFiltreRetardOnly(false) }}
             className="text-sm text-gray-500 underline hover:text-gray-700"
           >
             Réinitialiser
@@ -135,75 +175,87 @@ export default function AlertesPage() {
         )}
       </div>
 
-      {/* Liste */}
+      {/* Table */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
         </div>
-      ) : alertesFiltrees.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="rounded-xl bg-white p-12 text-center shadow-sm">
-          <p className="text-gray-500">Aucune alerte</p>
+          <p className="text-lg font-medium text-gray-400">Aucune échéance en attente</p>
+          <p className="mt-1 text-sm text-gray-400">Tous les dossiers sont à jour</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {alertesFiltrees.map((alerte) => {
-            const cfg = NIVEAU_CONFIG[alerte.niveau] ?? NIVEAU_CONFIG.INFO
-            return (
-              <div
-                key={alerte.id}
-                className={`rounded-xl border bg-white p-4 shadow-sm transition-opacity ${
-                  alerte.acquittee ? "opacity-60" : ""
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  {/* Badge niveau */}
-                  <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${cfg.bg} ${cfg.text}`}>
-                    {cfg.label}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className={`font-semibold text-gray-900 ${alerte.acquittee ? "line-through" : ""}`}>
-                        {alerte.titre}
-                      </h3>
-                      {alerte.acquittee && (
-                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
-                          Acquittée
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-gray-600">{alerte.message}</p>
-                    <div className="mt-2 flex items-center gap-4 text-xs text-gray-400">
-                      <span>{new Date(alerte.dateAlerte).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
-                      {alerte.dossier && (
-                        <a
-                          href={`/dossiers/${alerte.dossier.id}`}
-                          className="text-blue-500 hover:text-blue-700 hover:underline"
-                        >
-                          {alerte.dossier.raisonSociale}
-                        </a>
-                      )}
-                      {alerte.echeance && (
-                        <span className="text-gray-400">
-                          {alerte.echeance.libelle} — {new Date(alerte.echeance.dateEcheance).toLocaleDateString("fr-FR")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Bouton acquitter */}
-                  {!alerte.acquittee && (
-                    <button
-                      onClick={() => acquitter(alerte.id)}
-                      className="shrink-0 rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full text-xs">
+            <thead className="border-b border-gray-200 text-left text-[10px] font-medium uppercase tracking-wide text-gray-400">
+              <tr>
+                <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2.5">Dossier</th>
+                <th className="bg-gray-50 px-2 py-2.5">Collab.</th>
+                {OBLIGATION_COLS.map((col) => (
+                  <th key={col.key} className="bg-gray-50 px-2 py-2.5 text-center">{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map((row) => (
+                <tr key={row.dossierId} className="hover:bg-gray-50/60">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-2">
+                    <Link
+                      href={`/dossiers/${row.dossierId}`}
+                      className="font-medium text-gray-800 hover:text-blue-600 hover:underline"
                     >
-                      Acquitter
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                      {row.raisonSociale}
+                    </Link>
+                    <div className="text-[9px] text-gray-400">{row.cabinet}</div>
+                  </td>
+                  <td className="px-2 py-2 text-gray-500">{row.collaborateur}</td>
+                  {OBLIGATION_COLS.map((col) => {
+                    const echs = row.echeances.get(col.key)
+                    if (!echs || echs.length === 0) {
+                      return (
+                        <td key={col.key} className="px-2 py-2 text-center">
+                          <span className="text-gray-200">—</span>
+                        </td>
+                      )
+                    }
+                    return (
+                      <td key={col.key} className="px-1 py-1.5">
+                        <div className="flex flex-col gap-1">
+                          {echs.map((ech) => {
+                            const jours = joursRetard(ech.dateEcheance)
+                            const isOverdue = jours > 0
+                            const isUrgent = jours >= 0 && jours <= 7
+                            return (
+                              <button
+                                key={ech.id}
+                                onClick={() => markAsFait(ech.id)}
+                                title={`${ech.libelle}\n${new Date(ech.dateEcheance).toLocaleDateString("fr-FR")}\nCliquer pour marquer comme FAIT`}
+                                className={`group relative rounded px-1.5 py-1 text-center text-[10px] font-medium transition-all ${
+                                  isOverdue
+                                    ? "border border-red-200 bg-red-50 text-red-700 hover:bg-green-50 hover:text-green-700 hover:border-green-300"
+                                    : isUrgent
+                                      ? "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-green-50 hover:text-green-700 hover:border-green-300"
+                                      : "border border-blue-200 bg-blue-50 text-blue-700 hover:bg-green-50 hover:text-green-700 hover:border-green-300"
+                                }`}
+                              >
+                                <span className="group-hover:hidden">
+                                  {isOverdue ? `J+${jours}` : jours === 0 ? "Auj." : `J-${Math.abs(jours)}`}
+                                </span>
+                                <span className="hidden group-hover:inline">
+                                  ✓ Fait
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </main>
