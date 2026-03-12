@@ -182,9 +182,12 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
       if (res.ok) {
         setShowModal(false)
         await fetchSuivis()
+      } else {
+        const err = await res.json().catch(() => null)
+        alert(`Erreur lors de l'enregistrement : ${err?.error ?? res.statusText}`)
       }
-    } catch {
-      // silent
+    } catch (e) {
+      alert(`Erreur réseau : ${e instanceof Error ? e.message : "inconnue"}`)
     } finally {
       setSaving(false)
     }

@@ -79,21 +79,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Invalid sens. Must be one of: ${SENS_VALIDES.join(", ")}` }, { status: 400 })
   }
 
-  const suivi = await prisma.suiviRevision.create({
-    data: {
-      tenantId,
-      dossierId,
-      dateContact: new Date(dateContact),
-      collaborateurId: collaborateurId || null,
-      sens: sens || "SORTANT",
-      sujet: sujet || null,
-      resume: resume || null,
-      statut: statut || "RAS",
-      prochainContact: prochainContact ? new Date(prochainContact) : null,
-    },
-  })
+  try {
+    const suivi = await prisma.suiviRevision.create({
+      data: {
+        tenantId,
+        dossierId,
+        dateContact: new Date(dateContact),
+        collaborateurId: collaborateurId || null,
+        sens: sens || "SORTANT",
+        sujet: sujet || null,
+        resume: resume || null,
+        statut: statut || "RAS",
+        prochainContact: prochainContact ? new Date(prochainContact) : null,
+      },
+    })
 
-  return NextResponse.json(suivi, { status: 201 })
+    return NextResponse.json(suivi, { status: 201 })
+  } catch (e) {
+    console.error("POST /api/suivi-revision error:", e)
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Erreur lors de la création" },
+      { status: 500 }
+    )
+  }
 }
 
 /**
