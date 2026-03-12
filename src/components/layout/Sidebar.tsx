@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -17,6 +18,7 @@ interface SidebarProps {
 
 export default function Sidebar({ alertesCount, emailsNonLus }: SidebarProps) {
   const pathname = usePathname()
+  const [showHelp, setShowHelp] = useState(false)
 
   const navItems: NavItem[] = [
     {
@@ -183,6 +185,27 @@ export default function Sidebar({ alertesCount, emailsNonLus }: SidebarProps) {
         </Link>
       </div>
 
+      {/* Aide button */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => setShowHelp(true)}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium"
+          style={{
+            color: "var(--sidebar-text, #ffffff)",
+            opacity: 0.7,
+            backgroundColor: "transparent",
+            transition: "background-color 0.2s ease, opacity 0.2s ease",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.opacity = "1" }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.opacity = "0.7" }}
+        >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Aide</span>
+        </button>
+      </div>
+
       {/* User footer */}
       <div className="px-4 py-3" style={{ borderTop: "1px solid rgba(255,255,255,0.15)" }}>
         <div className="flex items-center gap-3">
@@ -195,6 +218,170 @@ export default function Sidebar({ alertesCount, emailsNonLus }: SidebarProps) {
           </div>
         </div>
       </div>
+
+      {/* Panneau Aide */}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </aside>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Panneau d'aide
+// ──────────────────────────────────────────────
+
+const HELP_SECTIONS = [
+  {
+    title: "Tableau de bord",
+    content: `Le tableau de bord affiche une vue d'ensemble de votre cabinet : avancement global des bilans, dossiers en retard, alertes actives et statistiques cl\u00e9s.`,
+  },
+  {
+    title: "Dossiers",
+    items: [
+      { label: "Onglet Bilan", desc: "Liste de tous les dossiers avec avancement, \u00e9tapes et commentaires. Cliquez sur les indicateurs color\u00e9s pour changer le statut d'une \u00e9tape." },
+      { label: "Onglet Courant", desc: "Suivi mensuel de la saisie comptable courante pour chaque dossier." },
+      { label: "Onglet R\u00e9vision", desc: "Dossiers en r\u00e9vision annuelle avec suivi des contacts client." },
+      { label: "Onglet T\u00e2ches", desc: "T\u00e2ches exceptionnelles ponctuelles hors bilan/courant." },
+    ],
+  },
+  {
+    title: "Raccourcis clavier (tableau Bilan)",
+    items: [
+      { label: "\u2191 \u2193", desc: "Naviguer entre les dossiers" },
+      { label: "\u2190 \u2192", desc: "Se d\u00e9placer entre les \u00e9tapes" },
+      { label: "0 / 1 / 2 / 3 / 4", desc: "D\u00e9finir le niveau (0%, 25%, 50%, 75%, 100%)" },
+      { label: "Entr\u00e9e", desc: "Ouvrir le panneau d'\u00e9tapes complet" },
+      { label: "Echap", desc: "Quitter le mode navigation" },
+    ],
+  },
+  {
+    title: "Fiche dossier",
+    items: [
+      { label: "G\u00e9n\u00e9ral", desc: "Informations du dossier, contacts, collaborateurs, adresses email." },
+      { label: "Comptabilit\u00e9", desc: "D\u00e9tails comptables, logiciel utilis\u00e9, p\u00e9riodicit\u00e9 de saisie." },
+      { label: "Bilan & \u00c9tapes", desc: "14 \u00e9tapes pond\u00e9r\u00e9es du bilan avec barre d'avancement." },
+      { label: "TVA", desc: "Grille mensuelle color\u00e9e du suivi TVA (vert = fait, bleu = client, gris = N/A)." },
+      { label: "IS & Imp\u00f4ts", desc: "Acomptes IS, CFE, CVAE, TVS, taxe fonci\u00e8re et soldes." },
+      { label: "\u00c9ch\u00e9ances", desc: "Liste des \u00e9ch\u00e9ances fiscales et juridiques calcul\u00e9es automatiquement." },
+      { label: "Historique \u00e9changes", desc: "Tableau des appels et contacts avec le client (sens, sujet, r\u00e9sum\u00e9)." },
+      { label: "Travaux", desc: "Outils IA : agent d'analyse de balance par cycle comptable." },
+      { label: "Notes", desc: "Notes par cycle comptable (11 cycles) + commentaires g\u00e9n\u00e9raux." },
+    ],
+  },
+  {
+    title: "Indicateurs d'avancement",
+    items: [
+      { label: "Carr\u00e9 gris clair", desc: "Non commenc\u00e9 (0%)" },
+      { label: "Carr\u00e9 gris fonc\u00e9", desc: "D\u00e9marr\u00e9 (25%)" },
+      { label: "Carr\u00e9 gris moyen", desc: "En cours (50%)" },
+      { label: "Carr\u00e9 orange", desc: "Avanc\u00e9 (75%)" },
+      { label: "Carr\u00e9 vert", desc: "Termin\u00e9 (100%)" },
+      { label: "Carr\u00e9 jaune", desc: "\u00c9tape note / commentaire (non compt\u00e9 dans le %)" },
+    ],
+  },
+  {
+    title: "\u00c9changes client",
+    content: `Depuis le tableau Bilan, cliquez sur l'ic\u00f4ne t\u00e9l\u00e9phone pour enregistrer un \u00e9change. Indiquez le sens (sortant = vous avez appel\u00e9, entrant = le client a appel\u00e9), le sujet, un r\u00e9sum\u00e9, le statut (RAS / Demande client / Action requise) et la date du prochain contact pr\u00e9vu.`,
+  },
+  {
+    title: "Alertes",
+    content: `La page Alertes affiche un tableau de toutes les \u00e9ch\u00e9ances en retard ou \u00e0 venir. Les colonnes repr\u00e9sentent les types d'obligation (TVA, IS, AGO...). Cliquez sur le bouton \"\u2713 Fait\" pour marquer une \u00e9ch\u00e9ance comme r\u00e9alis\u00e9e.`,
+  },
+  {
+    title: "Notes par cycle",
+    content: `Chaque dossier poss\u00e8de 11 espaces de notes organis\u00e9s par cycle comptable : G\u00e9n\u00e9ral, Tr\u00e9sorerie, Achats/Fournisseurs, Charges Externes, Ventes/Clients, Stock, Immobilisations, Social/Paie, \u00c9tat, Capitaux Propres, Autres. Acc\u00e9dez-y via l'ic\u00f4ne crayon dans le tableau ou l'onglet Notes de la fiche dossier.`,
+  },
+  {
+    title: "Agenda",
+    content: `L'agenda affiche vos \u00e9ch\u00e9ances dans un calendrier mensuel. Les pastilles color\u00e9es indiquent le type (\ud83d\udfe2 fait, \ud83d\udfe1 \u00e0 venir, \ud83d\udd34 en retard). Cliquez sur un jour pour voir le d\u00e9tail.`,
+  },
+  {
+    title: "Statistiques",
+    content: `La page Statistiques pr\u00e9sente l'avancement global par collaborateur, par cabinet et par p\u00e9riode. Utilisez les filtres pour affiner la vue.`,
+  },
+]
+
+function HelpPanel({ onClose }: { onClose: () => void }) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="flex-1" />
+      <div
+        className="h-full w-full max-w-md overflow-y-auto border-l bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 border-b bg-white px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+                <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Aide</h2>
+                <p className="text-xs text-gray-500">Guide d&apos;utilisation CabinetTrack</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-1">
+          {HELP_SECTIONS.map((section, idx) => {
+            const isOpen = expandedIdx === idx
+            return (
+              <div key={idx} className="rounded-lg border border-gray-200">
+                <button
+                  onClick={() => setExpandedIdx(isOpen ? null : idx)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                >
+                  <span>{section.title}</span>
+                  <svg
+                    className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {isOpen && (
+                  <div className="border-t px-4 py-3">
+                    {section.content && (
+                      <p className="text-sm text-gray-600 leading-relaxed">{section.content}</p>
+                    )}
+                    {section.items && (
+                      <ul className="space-y-2">
+                        {section.items.map((item, i) => (
+                          <li key={i} className="text-sm">
+                            <span className="font-medium text-gray-800">{item.label}</span>
+                            <span className="text-gray-500"> — {item.desc}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t px-6 py-4">
+          <p className="text-xs text-gray-400 text-center">
+            CabinetTrack v1.0 — Logiciel de gestion pour cabinets d&apos;expertise comptable
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }
