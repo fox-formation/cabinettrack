@@ -94,7 +94,7 @@ export default function DossiersTabs({ dossiers, collaborateurs, defaultTab, onT
       </div>
 
       {/* Tab content */}
-      {activeTab === "bilan" && <DossiersTable dossiers={dossiers} />}
+      {activeTab === "bilan" && <DossiersTable dossiers={dossiers} collaborateurs={collaborateurs} />}
       {activeTab === "courant" && <DossiersCourantTable dossiers={nonRevisionDossiers} onStatsChange={onCourantStatsChange} />}
       {activeTab === "revision" && (
         <DossiersRevisionTable dossiers={revisionDossiers} collaborateurs={collaborateurs} />

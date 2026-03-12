@@ -29,8 +29,15 @@ interface DossierRow {
   commentaireBilan: string | null
 }
 
+interface CollabOption {
+  id: string
+  prenom: string
+  role: string
+}
+
 interface DossiersTableProps {
   dossiers: DossierRow[]
+  collaborateurs?: CollabOption[]
 }
 
 const ROLE_SHORT: Record<string, string> = {
@@ -40,7 +47,7 @@ const ROLE_SHORT: Record<string, string> = {
   EXPERT_COMPTABLE: "EC",
 }
 
-export default function DossiersTable({ dossiers: initialDossiers }: DossiersTableProps) {
+export default function DossiersTable({ dossiers: initialDossiers, collaborateurs = [] }: DossiersTableProps) {
   const { data: session } = useSession()
   const userNumero = (session?.user as Record<string, unknown> | undefined)?.numero as string | null ?? null
   const [panelDossierId, setPanelDossierId] = useState<string | null>(null)
@@ -53,6 +60,63 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
   const [focusedEtape, setFocusedEtape] = useState(0)
   const tableRef = useRef<HTMLTableElement>(null)
   const now = new Date()
+
+  // ── Exchange modal state ──
+  const [exchangeModal, setExchangeModal] = useState<{ dossierId: string; raisonSociale: string } | null>(null)
+  const [exchangeForm, setExchangeForm] = useState({
+    dateContact: new Date().toISOString().slice(0, 10),
+    collaborateurId: "",
+    sens: "SORTANT" as "SORTANT" | "ENTRANT",
+    sujet: "",
+    resume: "",
+    statut: "RAS" as "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE",
+    prochainContact: "",
+  })
+  const [exchangeSaving, setExchangeSaving] = useState(false)
+
+  const openExchangeModal = useCallback((dossierId: string, raisonSociale: string) => {
+    setExchangeForm({
+      dateContact: new Date().toISOString().slice(0, 10),
+      collaborateurId: "",
+      sens: "SORTANT",
+      sujet: "",
+      resume: "",
+      statut: "RAS",
+      prochainContact: "",
+    })
+    setExchangeModal({ dossierId, raisonSociale })
+  }, [])
+
+  const submitExchange = useCallback(async () => {
+    if (!exchangeModal) return
+    setExchangeSaving(true)
+    try {
+      const res = await fetch("/api/suivi-revision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dossierId: exchangeModal.dossierId,
+          dateContact: exchangeForm.dateContact,
+          collaborateurId: exchangeForm.collaborateurId || null,
+          sens: exchangeForm.sens,
+          sujet: exchangeForm.sujet || null,
+          resume: exchangeForm.resume || null,
+          statut: exchangeForm.statut,
+          prochainContact: exchangeForm.prochainContact || null,
+        }),
+      })
+      if (res.ok) {
+        setExchangeModal(null)
+      } else {
+        const err = await res.json().catch(() => null)
+        alert(`Erreur : ${err?.error ?? res.statusText}`)
+      }
+    } catch (e) {
+      alert(`Erreur réseau : ${e instanceof Error ? e.message : "inconnue"}`)
+    } finally {
+      setExchangeSaving(false)
+    }
+  }, [exchangeModal, exchangeForm])
 
   // ── Batch save: accumulate étape changes, flush in one PATCH per dossier ──
   const pendingRef = useRef<Record<string, Record<string, string | null>>>({})
@@ -332,6 +396,11 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </th>
+              <th className="px-1 py-2 text-center" title="Nouvel échange">
+                <svg className="mx-auto h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -455,6 +524,17 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
                       </svg>
                     </button>
                   </td>
+                  <td className="px-1 py-2 text-center">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openExchangeModal(d.id, d.raisonSociale) }}
+                      className="rounded p-1 text-gray-400 transition-colors hover:bg-green-50 hover:text-green-600"
+                      title="Nouvel échange"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               )
             })}
@@ -486,6 +566,154 @@ export default function DossiersTable({ dossiers: initialDossiers }: DossiersTab
           raisonSociale={dossiers.find((d) => d.id === notesDossierId)?.raisonSociale ?? ""}
           onClose={() => setNotesDossierId(null)}
         />
+      )}
+
+      {/* Modal: Nouvel échange */}
+      {exchangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setExchangeModal(null)}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Nouvel échange</h3>
+              <button onClick={() => setExchangeModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <p className="mb-4 text-sm text-gray-500">{exchangeModal.raisonSociale}</p>
+
+            <div className="space-y-4">
+              {/* Date */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Date du contact</label>
+                <input
+                  type="date"
+                  value={exchangeForm.dateContact}
+                  onChange={(e) => setExchangeForm({ ...exchangeForm, dateContact: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Collaborateur */}
+              {collaborateurs.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Collaborateur</label>
+                  <select
+                    value={exchangeForm.collaborateurId}
+                    onChange={(e) => setExchangeForm({ ...exchangeForm, collaborateurId: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {collaborateurs.map((c) => (
+                      <option key={c.id} value={c.id}>{c.prenom}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Sens */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sens du contact</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExchangeForm({ ...exchangeForm, sens: "SORTANT" })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      exchangeForm.sens === "SORTANT"
+                        ? "bg-blue-100 text-blue-800 ring-2 ring-blue-300"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    &#8599; Nous avons appelé
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExchangeForm({ ...exchangeForm, sens: "ENTRANT" })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      exchangeForm.sens === "ENTRANT"
+                        ? "bg-green-100 text-green-800 ring-2 ring-green-300"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    &#8601; Le client nous a contacté
+                  </button>
+                </div>
+              </div>
+
+              {/* Sujet */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sujet</label>
+                <input
+                  type="text"
+                  value={exchangeForm.sujet}
+                  onChange={(e) => setExchangeForm({ ...exchangeForm, sujet: e.target.value })}
+                  placeholder="Ex: Demande de documents, Relance TVA..."
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Résumé */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Résumé</label>
+                <textarea
+                  value={exchangeForm.resume}
+                  onChange={(e) => setExchangeForm({ ...exchangeForm, resume: e.target.value })}
+                  rows={3}
+                  placeholder="Notes du contact..."
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Statut */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
+                <div className="flex gap-2">
+                  {(["RAS", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const).map((s) => {
+                    const conf = { RAS: "bg-green-100 text-green-800", DEMANDE_CLIENT: "bg-orange-100 text-orange-800", ACTION_REQUISE: "bg-red-100 text-red-800" }
+                    const labels = { RAS: "RAS", DEMANDE_CLIENT: "Demande client", ACTION_REQUISE: "Action requise" }
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setExchangeForm({ ...exchangeForm, statut: s })}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                          exchangeForm.statut === s
+                            ? `${conf[s]} ring-2 ring-offset-1 ring-gray-300`
+                            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                        }`}
+                      >
+                        {labels[s]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Prochain contact */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Prochain contact prévu</label>
+                <input
+                  type="date"
+                  value={exchangeForm.prochainContact}
+                  onChange={(e) => setExchangeForm({ ...exchangeForm, prochainContact: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setExchangeModal(null)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={submitExchange}
+                disabled={exchangeSaving}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {exchangeSaving ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
