@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const tenantId = await getTenantId()
   const body = await req.json()
-  const { dossierId, dateContact, collaborateurId, resume, statut, prochainContact } = body
+  const { dossierId, dateContact, collaborateurId, sens, sujet, resume, statut, prochainContact } = body
 
   if (!dossierId || !dateContact) {
     return NextResponse.json({ error: "dossierId and dateContact are required" }, { status: 400 })
@@ -74,12 +74,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Invalid statut. Must be one of: ${STATUTS_VALIDES.join(", ")}` }, { status: 400 })
   }
 
+  const SENS_VALIDES = ["SORTANT", "ENTRANT"] as const
+  if (sens && !SENS_VALIDES.includes(sens)) {
+    return NextResponse.json({ error: `Invalid sens. Must be one of: ${SENS_VALIDES.join(", ")}` }, { status: 400 })
+  }
+
   const suivi = await prisma.suiviRevision.create({
     data: {
       tenantId,
       dossierId,
       dateContact: new Date(dateContact),
       collaborateurId: collaborateurId || null,
+      sens: sens || "SORTANT",
+      sujet: sujet || null,
       resume: resume || null,
       statut: statut || "RAS",
       prochainContact: prochainContact ? new Date(prochainContact) : null,
@@ -118,6 +125,8 @@ export async function PATCH(req: NextRequest) {
   const data: Record<string, unknown> = {}
   if (fields.resume !== undefined) data.resume = fields.resume || null
   if (fields.statut !== undefined) data.statut = fields.statut
+  if (fields.sens !== undefined) data.sens = fields.sens
+  if (fields.sujet !== undefined) data.sujet = fields.sujet || null
   if (fields.prochainContact !== undefined) {
     data.prochainContact = fields.prochainContact ? new Date(fields.prochainContact) : null
   }

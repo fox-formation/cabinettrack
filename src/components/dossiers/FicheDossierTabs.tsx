@@ -29,6 +29,7 @@ const TABS = [
   { id: "tva", label: "TVA" },
   { id: "is", label: "IS & Impôts" },
   { id: "echeances", label: "Échéances" },
+  { id: "echanges", label: "Historique échanges" },
   { id: "travaux", label: "Travaux" },
   { id: "notes", label: "Notes" },
 ] as const
@@ -143,6 +144,7 @@ export default function FicheDossierTabs({ dossier: initialDossier, collaborateu
           <TabIS dossier={dossier} onUpdate={handleDossierUpdate} />
         )}
         {activeTab === "echeances" && <TabEcheances echeances={dossier.echeances} />}
+        {activeTab === "echanges" && <TabEchanges dossierId={dossier.id} raisonSociale={dossier.raisonSociale} />}
         {activeTab === "travaux" && <TabTravaux dossier={dossier} />}
         {activeTab === "notes" && <TabNotes dossier={dossier} />}
       </div>
@@ -1439,6 +1441,168 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
 
 // ──────────────────────────────────────────────
 // Tab Travaux (Outils IA)
+// ──────────────────────────────────────────────
+
+// ──────────────────────────────────────────────
+// Historique échanges
+// ──────────────────────────────────────────────
+
+interface EchangeEntry {
+  id: string
+  dateContact: string
+  sens: "SORTANT" | "ENTRANT"
+  sujet: string | null
+  resume: string | null
+  statut: "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE"
+  prochainContact: string | null
+  collaborateur: { user: { id: string; prenom: string; role: string } } | null
+}
+
+const SENS_CONFIG = {
+  SORTANT: { label: "Sortant", arrow: "↗", bg: "bg-blue-100", text: "text-blue-700" },
+  ENTRANT: { label: "Entrant", arrow: "↙", bg: "bg-green-100", text: "text-green-700" },
+} as const
+
+const STATUT_REV_CONFIG = {
+  RAS: { label: "RAS", bg: "bg-green-100", text: "text-green-800", dot: "bg-green-500" },
+  DEMANDE_CLIENT: { label: "Demande client", bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500" },
+  ACTION_REQUISE: { label: "Action requise", bg: "bg-red-100", text: "text-red-800", dot: "bg-red-500" },
+} as const
+
+function TabEchanges({ dossierId, raisonSociale }: { dossierId: string; raisonSociale: string }) {
+  const [entries, setEntries] = useState<EchangeEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const fetchEntries = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/suivi-revision?dossierId=${dossierId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setEntries(data)
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
+    }
+  }, [dossierId])
+
+  useEffect(() => {
+    fetchEntries()
+  }, [fetchEntries])
+
+  if (loading) {
+    return <div className="py-8 text-center text-gray-400">Chargement...</div>
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
+        <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+        <p className="mt-3 text-gray-500">Aucun échange enregistré pour {raisonSociale}.</p>
+        <p className="mt-1 text-sm text-gray-400">
+          Les échanges sont ajoutés depuis l&apos;onglet Révision de la liste des dossiers.
+        </p>
+      </div>
+    )
+  }
+
+  const fmtDate = (iso: string | null) => {
+    if (!iso) return "—"
+    return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">
+          {entries.length} échange{entries.length > 1 ? "s" : ""} enregistré{entries.length > 1 ? "s" : ""}
+        </h3>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b bg-gray-50 text-xs font-medium uppercase text-gray-500">
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Sens</th>
+              <th className="px-4 py-3">Sujet</th>
+              <th className="px-4 py-3">Collaborateur</th>
+              <th className="px-4 py-3">Statut</th>
+              <th className="px-4 py-3">Prochain contact</th>
+              <th className="px-4 py-3 text-center">Résumé</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => {
+              const sensConf = SENS_CONFIG[entry.sens] ?? SENS_CONFIG.SORTANT
+              const statutConf = STATUT_REV_CONFIG[entry.statut]
+              const isExpanded = expandedId === entry.id
+
+              return (
+                <>
+                  <tr
+                    key={entry.id}
+                    className="border-b transition-colors hover:bg-gray-50"
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {fmtDate(entry.dateContact)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${sensConf.bg} ${sensConf.text}`}>
+                        {sensConf.arrow} {sensConf.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {entry.sujet || <span className="text-gray-400 italic">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {entry.collaborateur?.user?.prenom ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${statutConf.bg} ${statutConf.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statutConf.dot}`} />
+                        {statutConf.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {fmtDate(entry.prochainContact)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {entry.resume ? (
+                        <button
+                          onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-100"
+                        >
+                          {isExpanded ? "Masquer" : "Voir"}
+                        </button>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && entry.resume && (
+                    <tr key={`${entry.id}-resume`} className="border-b bg-gray-50">
+                      <td colSpan={7} className="px-6 py-3">
+                        <p className="whitespace-pre-wrap text-sm text-gray-700">{entry.resume}</p>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Travaux
 // ──────────────────────────────────────────────
 
 function TabTravaux({ dossier }: { dossier: DossierFull }) {

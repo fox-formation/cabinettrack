@@ -188,6 +188,11 @@ enum StatutRevision {
   ACTION_REQUISE
 }
 
+enum SensContact {
+  SORTANT   // Nous avons appelé le client
+  ENTRANT   // Le client nous a contacté
+}
+
 model Dossier {
   id        String @id @default(uuid())
   tenantId  String @map("tenant_id")
@@ -377,6 +382,8 @@ model SuiviRevision {
 
   dateContact     DateTime        @map("date_contact") @db.Date
   collaborateurId String?         @map("collaborateur_id")
+  sens            SensContact     @default(SORTANT)
+  sujet           String?         @db.VarChar(255)
   resume          String?         @db.Text
   statut          StatutRevision  @default(RAS)
   prochainContact DateTime?       @map("prochain_contact") @db.Date

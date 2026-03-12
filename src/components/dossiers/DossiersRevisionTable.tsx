@@ -10,6 +10,8 @@ interface SuiviRevisionEntry {
   dossierId: string
   dateContact: string
   collaborateurId: string | null
+  sens: "SORTANT" | "ENTRANT"
+  sujet: string | null
   resume: string | null
   statut: "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE"
   prochainContact: string | null
@@ -71,6 +73,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
   const [modalForm, setModalForm] = useState({
     dateContact: new Date().toISOString().slice(0, 10),
     collaborateurId: "",
+    sens: "SORTANT" as "SORTANT" | "ENTRANT",
+    sujet: "",
     resume: "",
     statut: "RAS" as "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE",
     prochainContact: defaultProchainContact(),
@@ -147,6 +151,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     setModalForm({
       dateContact: new Date().toISOString().slice(0, 10),
       collaborateurId: "",
+      sens: "SORTANT",
+      sujet: "",
       resume: "",
       statut: "RAS",
       prochainContact: defaultProchainContact(),
@@ -166,6 +172,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
           dossierId: modalDossierId,
           dateContact: modalForm.dateContact,
           collaborateurId: modalForm.collaborateurId || null,
+          sens: modalForm.sens,
+          sujet: modalForm.sujet || null,
           resume: modalForm.resume || null,
           statut: modalForm.statut,
           prochainContact: modalForm.prochainContact || null,
@@ -396,6 +404,51 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                 </select>
               </div>
 
+              {/* Sens du contact */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Sens du contact
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalForm({ ...modalForm, sens: "SORTANT" })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      modalForm.sens === "SORTANT"
+                        ? "bg-blue-100 text-blue-800 ring-2 ring-blue-300"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    <span>&#8599;</span> Nous avons appelé
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalForm({ ...modalForm, sens: "ENTRANT" })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      modalForm.sens === "ENTRANT"
+                        ? "bg-green-100 text-green-800 ring-2 ring-green-300"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    <span>&#8601;</span> Le client nous a contacté
+                  </button>
+                </div>
+              </div>
+
+              {/* Sujet */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Sujet
+                </label>
+                <input
+                  type="text"
+                  value={modalForm.sujet}
+                  onChange={(e) => setModalForm({ ...modalForm, sujet: e.target.value })}
+                  placeholder="Ex: Demande de documents, Relance TVA..."
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
               {/* Résumé */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -513,9 +566,20 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                       className="rounded-lg border border-gray-200 p-4"
                     >
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-900">
-                          {formatDate(entry.dateContact)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            {formatDate(entry.dateContact)}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              entry.sens === "ENTRANT"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-blue-100 text-blue-700"
+                            }`}
+                          >
+                            {entry.sens === "ENTRANT" ? "↙ Entrant" : "↗ Sortant"}
+                          </span>
+                        </div>
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${STATUT_CONFIG[entry.statut].bg} ${STATUT_CONFIG[entry.statut].text}`}
                         >
@@ -523,6 +587,11 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                           {STATUT_CONFIG[entry.statut].label}
                         </span>
                       </div>
+                      {entry.sujet && (
+                        <p className="text-sm font-medium text-gray-800">
+                          {entry.sujet}
+                        </p>
+                      )}
                       {entry.collaborateur?.user && (
                         <p className="text-xs text-gray-500">
                           Par {entry.collaborateur.user.prenom}
