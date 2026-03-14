@@ -16,6 +16,8 @@ interface FecKpis {
   totalCharges: number
   totalProduits: number
   resultat: number
+  resultatExploitation: number
+  margeExploitation: number | null
   montantIS: number
   lignesParJournal: Record<string, number>
 }
@@ -48,7 +50,7 @@ function detectEncoding(buffer: Buffer): string {
 function parseFec(content: string): FecKpis {
   const lines = content.split(/\r?\n/).filter((l) => l.trim())
   if (lines.length < 2) {
-    return { nbLignes: 0, chiffreAffaires: 0, totalCharges: 0, totalProduits: 0, resultat: 0, montantIS: 0, lignesParJournal: {} }
+    return { nbLignes: 0, chiffreAffaires: 0, totalCharges: 0, totalProduits: 0, resultat: 0, resultatExploitation: 0, margeExploitation: null, montantIS: 0, lignesParJournal: {} }
   }
 
   const separator = detectSeparator(lines[0])
@@ -75,6 +77,11 @@ function parseFec(content: string): FecKpis {
   let totalCreditClasse6 = 0
   let totalDebitClasse7 = 0
   let totalCreditClasse7 = 0
+  // Exploitation : comptes 60-65 (charges) et 70-75 (produits)
+  let debitChargesExploit = 0
+  let creditChargesExploit = 0
+  let debitProduitsExploit = 0
+  let creditProduitsExploit = 0
   let debitCompte695 = 0
   let nbLignes = 0
   const lignesParJournal: Record<string, number> = {}
@@ -105,17 +112,30 @@ function parseFec(content: string): FecKpis {
     }
 
     const classe = compte.charAt(0)
+    const prefix2 = compte.substring(0, 2)
 
     // Classe 6 = Charges
     if (classe === "6") {
       totalDebitClasse6 += debit
       totalCreditClasse6 += credit
+      // Charges d'exploitation : 60-65
+      const n2 = parseInt(prefix2, 10)
+      if (n2 >= 60 && n2 <= 65) {
+        debitChargesExploit += debit
+        creditChargesExploit += credit
+      }
     }
 
     // Classe 7 = Produits
     if (classe === "7") {
       totalDebitClasse7 += debit
       totalCreditClasse7 += credit
+      // Produits d'exploitation : 70-75
+      const n2 = parseInt(prefix2, 10)
+      if (n2 >= 70 && n2 <= 75) {
+        debitProduitsExploit += debit
+        creditProduitsExploit += credit
+      }
     }
 
     // Compte 695* = Impôt sur les sociétés
@@ -124,12 +144,19 @@ function parseFec(content: string): FecKpis {
     }
   }
 
-  // CA = Comptes 70* (net: crédit - débit) — classe 7 dans son ensemble pour simplifier
-  // Plus précisément les comptes 70 seulement, mais on prend toute la classe 7 comme "produits"
   const totalProduits = totalCreditClasse7 - totalDebitClasse7
   const totalCharges = totalDebitClasse6 - totalCreditClasse6
   const resultat = totalProduits - totalCharges
-  const chiffreAffaires = totalProduits // approximation : tous les produits
+  const chiffreAffaires = totalProduits
+
+  // Résultat d'exploitation = Produits exploit (70-75) - Charges exploit (60-65)
+  const produitsExploit = creditProduitsExploit - debitProduitsExploit
+  const chargesExploit = debitChargesExploit - creditChargesExploit
+  const resultatExploitation = produitsExploit - chargesExploit
+  // Marge d'exploitation = Résultat exploit / CA × 100
+  const margeExploitation = chiffreAffaires !== 0
+    ? (resultatExploitation / chiffreAffaires) * 100
+    : null
 
   return {
     nbLignes,
@@ -137,6 +164,8 @@ function parseFec(content: string): FecKpis {
     totalCharges: Math.round(totalCharges * 100) / 100,
     totalProduits: Math.round(totalProduits * 100) / 100,
     resultat: Math.round(resultat * 100) / 100,
+    resultatExploitation: Math.round(resultatExploitation * 100) / 100,
+    margeExploitation: margeExploitation !== null ? Math.round(margeExploitation * 100) / 100 : null,
     montantIS: Math.round(debitCompte695 * 100) / 100,
     lignesParJournal,
   }
@@ -223,7 +252,9 @@ export async function POST(req: NextRequest) {
         `Chiffre d'affaires : ${kpis.chiffreAffaires.toLocaleString("fr-FR")} €`,
         `Total charges : ${kpis.totalCharges.toLocaleString("fr-FR")} €`,
         `Total produits : ${kpis.totalProduits.toLocaleString("fr-FR")} €`,
-        `Résultat : ${kpis.resultat.toLocaleString("fr-FR")} €`,
+        `Résultat net : ${kpis.resultat.toLocaleString("fr-FR")} €`,
+        `Résultat d'exploitation : ${kpis.resultatExploitation.toLocaleString("fr-FR")} €`,
+        `Marge d'exploitation : ${kpis.margeExploitation !== null ? kpis.margeExploitation.toFixed(1) + " %" : "N/A"}`,
         `Montant IS : ${kpis.montantIS.toLocaleString("fr-FR")} €`,
         `Nombre de lignes : ${kpis.nbLignes}`,
       ]
@@ -235,7 +266,9 @@ export async function POST(req: NextRequest) {
           `Chiffre d'affaires : ${existingOther.chiffreAffaires?.toLocaleString("fr-FR") ?? "?"} €`,
           `Total charges : ${existingOther.totalCharges?.toLocaleString("fr-FR") ?? "?"} €`,
           `Total produits : ${existingOther.totalProduits?.toLocaleString("fr-FR") ?? "?"} €`,
-          `Résultat : ${existingOther.resultat?.toLocaleString("fr-FR") ?? "?"} €`,
+          `Résultat net : ${existingOther.resultat?.toLocaleString("fr-FR") ?? "?"} €`,
+          `Résultat d'exploitation : ${existingOther.resultatExploitation?.toLocaleString("fr-FR") ?? "?"} €`,
+          `Marge d'exploitation : ${existingOther.margeExploitation != null ? existingOther.margeExploitation.toFixed(1) + " %" : "N/A"}`,
           `Montant IS : ${existingOther.montantIS?.toLocaleString("fr-FR") ?? "?"} €`,
           `Nombre de lignes : ${existingOther.nbLignes}`,
         )
@@ -256,6 +289,8 @@ export async function POST(req: NextRequest) {
         nbLignes: kpis.nbLignes,
         chiffreAffaires: kpis.chiffreAffaires,
         resultat: kpis.resultat,
+        resultatExploitation: kpis.resultatExploitation,
+        margeExploitation: kpis.margeExploitation,
         montantIS: kpis.montantIS,
         totalCharges: kpis.totalCharges,
         totalProduits: kpis.totalProduits,
@@ -270,6 +305,8 @@ export async function POST(req: NextRequest) {
         nbLignes: kpis.nbLignes,
         chiffreAffaires: kpis.chiffreAffaires,
         resultat: kpis.resultat,
+        resultatExploitation: kpis.resultatExploitation,
+        margeExploitation: kpis.margeExploitation,
         montantIS: kpis.montantIS,
         totalCharges: kpis.totalCharges,
         totalProduits: kpis.totalProduits,

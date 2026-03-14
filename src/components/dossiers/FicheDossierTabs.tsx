@@ -1462,6 +1462,8 @@ interface FecData {
   totalCharges: number | null
   totalProduits: number | null
   resultat: number | null
+  resultatExploitation: number | null
+  margeExploitation: number | null
   montantIS: number | null
   lignesParJournal: Record<string, number> | null
   suggestionsIA: string | null
@@ -1627,16 +1629,27 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                 {[
                   { label: "Chiffre d'affaires", key: "chiffreAffaires" as const },
                   { label: "Total charges", key: "totalCharges" as const },
-                  { label: "Résultat", key: "resultat" as const },
+                  { label: "Résultat net", key: "resultat" as const },
+                  { label: "Résultat d'exploitation", key: "resultatExploitation" as const },
+                  { label: "Marge d'exploitation", key: "margeExploitation" as const },
                   ...(regimeFiscal === "IS" ? [{ label: "Montant IS", key: "montantIS" as const }] : []),
                   { label: "Nombre de lignes", key: "nbLignes" as const },
                 ].map((row) => {
                   const isNbLignes = row.key === "nbLignes"
+                  const isMarge = row.key === "margeExploitation"
+                  const isSpecial = isNbLignes || isMarge
                   // Variation between last two
                   const lastTwo = colImports.slice(-2)
-                  const var_ = lastTwo.length === 2 && !isNbLignes
+                  const var_ = lastTwo.length === 2 && !isSpecial
                     ? variation(lastTwo[1][row.key] as number, lastTwo[0][row.key] as number)
                     : null
+
+                  const fmtCell = (val: number | null) => {
+                    if (val === null || val === undefined) return "—"
+                    if (isMarge) return val.toFixed(1) + " %"
+                    if (isNbLignes) return fmtNb(val)
+                    return fmt(val)
+                  }
 
                   return (
                     <tr
@@ -1657,12 +1670,23 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                           key={f.exercice}
                           className={`px-6 py-3 text-right ${i === colImports.length - 1 ? "font-semibold text-gray-900" : "text-gray-600"}`}
                         >
-                          {isNbLignes ? fmtNb(f[row.key] as number) : fmt(f[row.key] as number)}
+                          {fmtCell(f[row.key] as number)}
                         </td>
                       ))}
                       {colImports.length >= 2 && (
                         <td className="px-6 py-3 text-right">
-                          {var_ !== null ? (
+                          {isMarge ? (() => {
+                            // Marge: show difference in points, not % variation
+                            const mN = lastTwo[1]?.margeExploitation
+                            const mN1 = lastTwo[0]?.margeExploitation
+                            if (mN == null || mN1 == null) return <span className="text-gray-400">—</span>
+                            const diff = mN - mN1
+                            return (
+                              <span className={`text-sm font-medium ${diff > 0 ? "text-green-600" : diff < 0 ? "text-red-600" : "text-gray-500"}`}>
+                                {diff > 0 ? "+" : ""}{diff.toFixed(1)} pts
+                              </span>
+                            )
+                          })() : var_ !== null ? (
                             <span className={`inline-flex items-center gap-1 text-sm font-medium ${
                               var_ > 0 ? (row.key === "totalCharges" ? "text-red-600" : "text-green-600")
                               : var_ < 0 ? (row.key === "totalCharges" ? "text-green-600" : "text-red-600")
