@@ -1463,6 +1463,7 @@ interface FecData {
   totalProduits: number | null
   resultat: number | null
   montantIS: number | null
+  lignesParJournal: Record<string, number> | null
   suggestionsIA: string | null
   createdAt: string
 }
@@ -1473,6 +1474,8 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
   const [uploading, setUploading] = useState(false)
   const [exercice, setExercice] = useState(new Date().getFullYear() - 1)
   const [error, setError] = useState<string | null>(null)
+  const [showJournaux, setShowJournaux] = useState(false)
+  const [viewExercice, setViewExercice] = useState<"all" | number>("all")
   const toast = useToast()
 
   const fetchImports = useCallback(async () => {
@@ -1537,8 +1540,18 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
 
   if (loading) return <div className="py-8 text-center text-gray-400">Chargement...</div>
 
-  const fecN = imports[0] ?? null
-  const fecN1 = imports[1] ?? null
+  // Filtered imports based on view selection
+  const visibleImports = viewExercice === "all"
+    ? imports
+    : imports.filter((f) => f.exercice === viewExercice)
+
+  // For comparison: always use 2 most recent of visible
+  const colImports = visibleImports.slice(0, viewExercice === "all" ? imports.length : 1)
+
+  // Collect all journal codes across all imports
+  const allJournaux = Array.from(
+    new Set(imports.flatMap((f) => Object.keys(f.lignesParJournal ?? {})))
+  ).sort()
 
   return (
     <div className="space-y-6">
@@ -1577,19 +1590,37 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
       {/* Résultats comparatifs */}
       {imports.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white">
-          <div className="border-b bg-gray-50 px-6 py-3">
+          <div className="flex items-center justify-between border-b bg-gray-50 px-6 py-3">
             <h3 className="text-sm font-semibold text-gray-700">
               Chiffres clés — {raisonSociale}
             </h3>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500">Afficher :</label>
+              <select
+                value={viewExercice}
+                onChange={(e) => setViewExercice(e.target.value === "all" ? "all" : parseInt(e.target.value, 10))}
+                className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+              >
+                <option value="all">Tous les exercices</option>
+                {imports.map((f) => (
+                  <option key={f.exercice} value={f.exercice}>
+                    Exercice {f.exercice}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs font-medium uppercase text-gray-500">
                   <th className="px-6 py-3 text-left">Indicateur</th>
-                  {fecN1 && <th className="px-6 py-3 text-right">N-1 ({fecN1.exercice})</th>}
-                  {fecN && <th className="px-6 py-3 text-right">N ({fecN.exercice})</th>}
-                  {fecN && fecN1 && <th className="px-6 py-3 text-right">Variation</th>}
+                  {colImports.map((f, i) => (
+                    <th key={f.exercice} className="px-6 py-3 text-right">
+                      {colImports.length > 1 && i === colImports.length - 1 ? "N" : colImports.length > 1 ? `N-${colImports.length - 1 - i}` : "N"} ({f.exercice})
+                    </th>
+                  ))}
+                  {colImports.length >= 2 && <th className="px-6 py-3 text-right">Variation</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1600,25 +1631,36 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                   ...(regimeFiscal === "IS" ? [{ label: "Montant IS", key: "montantIS" as const }] : []),
                   { label: "Nombre de lignes", key: "nbLignes" as const },
                 ].map((row) => {
-                  const vN = fecN?.[row.key] ?? null
-                  const vN1 = fecN1?.[row.key] ?? null
                   const isNbLignes = row.key === "nbLignes"
-                  const var_ = !isNbLignes ? variation(vN as number, vN1 as number) : null
+                  // Variation between last two
+                  const lastTwo = colImports.slice(-2)
+                  const var_ = lastTwo.length === 2 && !isNbLignes
+                    ? variation(lastTwo[1][row.key] as number, lastTwo[0][row.key] as number)
+                    : null
 
                   return (
-                    <tr key={row.key} className="border-b last:border-0">
-                      <td className="px-6 py-3 font-medium text-gray-900">{row.label}</td>
-                      {fecN1 && (
-                        <td className="px-6 py-3 text-right text-gray-600">
-                          {isNbLignes ? fmtNb(vN1 as number) : fmt(vN1 as number)}
+                    <tr
+                      key={row.key}
+                      className={`border-b last:border-0 ${isNbLignes ? "cursor-pointer hover:bg-blue-50" : ""}`}
+                      onClick={isNbLignes ? () => setShowJournaux(!showJournaux) : undefined}
+                    >
+                      <td className="px-6 py-3 font-medium text-gray-900">
+                        {row.label}
+                        {isNbLignes && (
+                          <span className="ml-2 text-xs text-blue-500">
+                            {showJournaux ? "▼ masquer journaux" : "▶ voir par journal"}
+                          </span>
+                        )}
+                      </td>
+                      {colImports.map((f, i) => (
+                        <td
+                          key={f.exercice}
+                          className={`px-6 py-3 text-right ${i === colImports.length - 1 ? "font-semibold text-gray-900" : "text-gray-600"}`}
+                        >
+                          {isNbLignes ? fmtNb(f[row.key] as number) : fmt(f[row.key] as number)}
                         </td>
-                      )}
-                      {fecN && (
-                        <td className="px-6 py-3 text-right font-semibold text-gray-900">
-                          {isNbLignes ? fmtNb(vN as number) : fmt(vN as number)}
-                        </td>
-                      )}
-                      {fecN && fecN1 && (
+                      ))}
+                      {colImports.length >= 2 && (
                         <td className="px-6 py-3 text-right">
                           {var_ !== null ? (
                             <span className={`inline-flex items-center gap-1 text-sm font-medium ${
@@ -1637,6 +1679,42 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                     </tr>
                   )
                 })}
+                {/* Détail par journal (expandable) */}
+                {showJournaux && allJournaux.length > 0 && allJournaux.map((journal) => (
+                  <tr key={`j-${journal}`} className="border-b bg-blue-50/50 last:border-0">
+                    <td className="py-2 pl-10 pr-6 text-xs text-gray-600">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+                        {journal}
+                      </span>
+                    </td>
+                    {colImports.map((f) => {
+                      const journalData = (f.lignesParJournal ?? {}) as Record<string, number>
+                      const count = journalData[journal] ?? 0
+                      return (
+                        <td key={f.exercice} className="px-6 py-2 text-right text-xs text-gray-600">
+                          {count > 0 ? fmtNb(count) : "—"}
+                        </td>
+                      )
+                    })}
+                    {colImports.length >= 2 && (
+                      <td className="px-6 py-2 text-right text-xs">
+                        {(() => {
+                          const lastTwo = colImports.slice(-2)
+                          const j0 = ((lastTwo[0].lignesParJournal ?? {}) as Record<string, number>)[journal] ?? 0
+                          const j1 = ((lastTwo[1].lignesParJournal ?? {}) as Record<string, number>)[journal] ?? 0
+                          const v = j0 > 0 ? ((j1 - j0) / j0) * 100 : null
+                          if (v === null) return <span className="text-gray-400">—</span>
+                          return (
+                            <span className={`font-medium ${v > 0 ? "text-gray-600" : v < 0 ? "text-gray-600" : "text-gray-400"}`}>
+                              {v > 0 ? "+" : ""}{v.toFixed(0)}%
+                            </span>
+                          )
+                        })()}
+                      </td>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

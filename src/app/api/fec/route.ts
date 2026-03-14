@@ -17,6 +17,7 @@ interface FecKpis {
   totalProduits: number
   resultat: number
   montantIS: number
+  lignesParJournal: Record<string, number>
 }
 
 function detectSeparator(firstLine: string): string {
@@ -47,7 +48,7 @@ function detectEncoding(buffer: Buffer): string {
 function parseFec(content: string): FecKpis {
   const lines = content.split(/\r?\n/).filter((l) => l.trim())
   if (lines.length < 2) {
-    return { nbLignes: 0, chiffreAffaires: 0, totalCharges: 0, totalProduits: 0, resultat: 0, montantIS: 0 }
+    return { nbLignes: 0, chiffreAffaires: 0, totalCharges: 0, totalProduits: 0, resultat: 0, montantIS: 0, lignesParJournal: {} }
   }
 
   const separator = detectSeparator(lines[0])
@@ -59,6 +60,9 @@ function parseFec(content: string): FecKpis {
   )
   const debitIdx = headers.findIndex((h) => ["debit", "montantdebit", "montant_debit"].includes(h))
   const creditIdx = headers.findIndex((h) => ["credit", "montantcredit", "montant_credit"].includes(h))
+  const journalIdx = headers.findIndex((h) =>
+    ["journalcode", "journal_code", "journal", "code_journal", "codejournal"].includes(h)
+  )
 
   if (compteIdx === -1 || debitIdx === -1 || creditIdx === -1) {
     throw new Error(
@@ -73,6 +77,7 @@ function parseFec(content: string): FecKpis {
   let totalCreditClasse7 = 0
   let debitCompte695 = 0
   let nbLignes = 0
+  const lignesParJournal: Record<string, number> = {}
 
   const parseAmount = (val: string): number => {
     if (!val) return 0
@@ -90,6 +95,14 @@ function parseFec(content: string): FecKpis {
     const credit = parseAmount(cols[creditIdx])
 
     nbLignes++
+
+    // Count per journal
+    if (journalIdx !== -1 && cols[journalIdx]) {
+      const journal = cols[journalIdx].trim().replace(/^"|"$/g, "").toUpperCase()
+      if (journal) {
+        lignesParJournal[journal] = (lignesParJournal[journal] || 0) + 1
+      }
+    }
 
     const classe = compte.charAt(0)
 
@@ -125,6 +138,7 @@ function parseFec(content: string): FecKpis {
     totalProduits: Math.round(totalProduits * 100) / 100,
     resultat: Math.round(resultat * 100) / 100,
     montantIS: Math.round(debitCompte695 * 100) / 100,
+    lignesParJournal,
   }
 }
 
@@ -245,6 +259,7 @@ export async function POST(req: NextRequest) {
         montantIS: kpis.montantIS,
         totalCharges: kpis.totalCharges,
         totalProduits: kpis.totalProduits,
+        lignesParJournal: kpis.lignesParJournal,
         suggestionsIA,
       },
       create: {
@@ -258,6 +273,7 @@ export async function POST(req: NextRequest) {
         montantIS: kpis.montantIS,
         totalCharges: kpis.totalCharges,
         totalProduits: kpis.totalProduits,
+        lignesParJournal: kpis.lignesParJournal,
         suggestionsIA,
       },
     })

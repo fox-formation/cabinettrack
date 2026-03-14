@@ -594,6 +594,7 @@ model FecImport {
   montantIS         Float?   @map("montant_is")
   totalCharges      Float?   @map("total_charges")
   totalProduits     Float?   @map("total_produits")
+  lignesParJournal  Json?    @map("lignes_par_journal") @db.JsonB
   suggestionsIA     String?  @map("suggestions_ia") @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
