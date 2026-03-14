@@ -191,7 +191,11 @@ async function main() {
   const collabMap: Record<string, string> = {}
   for (const prenom of Array.from(collabPrenoms)) {
     const role = ROLE_MAP[prenom] || "ASSISTANT"
-    const user = await prisma.user.create({
+    // Reuse existing user if already present for this tenant (avoid duplicates)
+    const existing = await prisma.user.findFirst({
+      where: { tenantId: tenant.id, prenom },
+    })
+    const user = existing ?? await prisma.user.create({
       data: {
         tenantId: tenant.id,
         prenom,
@@ -199,7 +203,7 @@ async function main() {
       },
     })
     collabMap[prenom] = user.id
-    console.log(`   ✅ ${prenom} (${role}) → ${user.id}`)
+    console.log(`   ✅ ${prenom} (${role}) → ${user.id}${existing ? " (existant)" : ""}`)
   }
 
   // ── Step 4: Import dossiers ──

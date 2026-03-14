@@ -67,16 +67,19 @@ async function main() {
   ]
 
   for (const c of collaborateurs) {
-    await prisma.user.upsert({
-      where: { id: `collab-${c.prenom.toLowerCase()}` },
-      update: {},
-      create: {
-        id: `collab-${c.prenom.toLowerCase()}`,
-        tenantId: tenant.id,
-        prenom: c.prenom,
-        role: c.role,
-      },
+    // Check if a user with this prenom already exists for this tenant
+    const existing = await prisma.user.findFirst({
+      where: { tenantId: tenant.id, prenom: c.prenom },
     })
+    if (!existing) {
+      await prisma.user.create({
+        data: {
+          tenantId: tenant.id,
+          prenom: c.prenom,
+          role: c.role,
+        },
+      })
+    }
   }
   console.log("[setup] Collaborateurs:", collaborateurs.length, "created/verified")
 

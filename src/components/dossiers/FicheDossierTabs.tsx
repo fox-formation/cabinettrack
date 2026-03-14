@@ -30,6 +30,7 @@ const TABS = [
   { id: "is", label: "IS & Impôts" },
   { id: "echeances", label: "Échéances" },
   { id: "echanges", label: "Historique échanges" },
+  { id: "fec", label: "FEC" },
   { id: "travaux", label: "Travaux" },
   { id: "notes", label: "Notes" },
 ] as const
@@ -145,6 +146,7 @@ export default function FicheDossierTabs({ dossier: initialDossier, collaborateu
         )}
         {activeTab === "echeances" && <TabEcheances echeances={dossier.echeances} />}
         {activeTab === "echanges" && <TabEchanges dossierId={dossier.id} raisonSociale={dossier.raisonSociale} />}
+        {activeTab === "fec" && <TabFEC dossierId={dossier.id} raisonSociale={dossier.raisonSociale} regimeFiscal={dossier.regimeFiscal} />}
         {activeTab === "travaux" && <TabTravaux dossier={dossier} />}
         {activeTab === "notes" && <TabNotes dossier={dossier} />}
       </div>
@@ -1446,6 +1448,267 @@ function TabNotes({ dossier }: { dossier: DossierFull }) {
 // ──────────────────────────────────────────────
 // Historique échanges
 // ──────────────────────────────────────────────
+
+// ──────────────────────────────────────────────
+// Tab FEC (Fichier des Écritures Comptables)
+// ──────────────────────────────────────────────
+
+interface FecData {
+  id: string
+  exercice: number
+  nomFichier: string
+  nbLignes: number
+  chiffreAffaires: number | null
+  totalCharges: number | null
+  totalProduits: number | null
+  resultat: number | null
+  montantIS: number | null
+  suggestionsIA: string | null
+  createdAt: string
+}
+
+function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string; raisonSociale: string; regimeFiscal: string | null }) {
+  const [imports, setImports] = useState<FecData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [exercice, setExercice] = useState(new Date().getFullYear() - 1)
+  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
+
+  const fetchImports = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/fec?dossierId=${dossierId}`)
+      if (res.ok) setImports(await res.json())
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
+    }
+  }, [dossierId])
+
+  useEffect(() => { fetchImports() }, [fetchImports])
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setError(null)
+
+    const fd = new FormData()
+    fd.append("file", file)
+    fd.append("dossierId", dossierId)
+    fd.append("exercice", String(exercice))
+
+    try {
+      const res = await fetch("/api/fec", { method: "POST", body: fd })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || "Erreur lors de l'import")
+        return
+      }
+      toast.success("FEC importé avec succès")
+      fetchImports()
+    } catch {
+      setError("Erreur réseau")
+    } finally {
+      setUploading(false)
+      e.target.value = ""
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Supprimer cet import FEC ?")) return
+    await fetch(`/api/fec?id=${id}`, { method: "DELETE" })
+    setImports((prev) => prev.filter((f) => f.id !== id))
+    toast.success("Import FEC supprimé")
+  }
+
+  const fmt = (val: number | null) => {
+    if (val === null || val === undefined) return "—"
+    return val.toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " €"
+  }
+
+  const fmtNb = (val: number) => val.toLocaleString("fr-FR")
+
+  const variation = (n: number | null, n1: number | null) => {
+    if (n === null || n1 === null || n1 === 0) return null
+    return ((n - n1) / Math.abs(n1)) * 100
+  }
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Chargement...</div>
+
+  const fecN = imports[0] ?? null
+  const fecN1 = imports[1] ?? null
+
+  return (
+    <div className="space-y-6">
+      {/* Upload */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h3 className="mb-4 text-sm font-semibold text-gray-700">Importer un FEC</h3>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Exercice</label>
+            <input
+              type="number"
+              value={exercice}
+              onChange={(e) => setExercice(parseInt(e.target.value, 10))}
+              min={2000}
+              max={2100}
+              className="w-28 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Fichier FEC (.txt, .csv)</label>
+            <input
+              type="file"
+              accept=".txt,.csv,.TXT,.CSV"
+              onChange={handleUpload}
+              disabled={uploading}
+              className="text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+            />
+          </div>
+          {uploading && <span className="text-sm text-blue-600">Analyse en cours...</span>}
+        </div>
+        {error && (
+          <div className="mt-3 rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+        )}
+      </div>
+
+      {/* Résultats comparatifs */}
+      {imports.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white">
+          <div className="border-b bg-gray-50 px-6 py-3">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Chiffres clés — {raisonSociale}
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs font-medium uppercase text-gray-500">
+                  <th className="px-6 py-3 text-left">Indicateur</th>
+                  {fecN1 && <th className="px-6 py-3 text-right">N-1 ({fecN1.exercice})</th>}
+                  {fecN && <th className="px-6 py-3 text-right">N ({fecN.exercice})</th>}
+                  {fecN && fecN1 && <th className="px-6 py-3 text-right">Variation</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: "Chiffre d'affaires", key: "chiffreAffaires" as const },
+                  { label: "Total charges", key: "totalCharges" as const },
+                  { label: "Résultat", key: "resultat" as const },
+                  ...(regimeFiscal === "IS" ? [{ label: "Montant IS", key: "montantIS" as const }] : []),
+                  { label: "Nombre de lignes", key: "nbLignes" as const },
+                ].map((row) => {
+                  const vN = fecN?.[row.key] ?? null
+                  const vN1 = fecN1?.[row.key] ?? null
+                  const isNbLignes = row.key === "nbLignes"
+                  const var_ = !isNbLignes ? variation(vN as number, vN1 as number) : null
+
+                  return (
+                    <tr key={row.key} className="border-b last:border-0">
+                      <td className="px-6 py-3 font-medium text-gray-900">{row.label}</td>
+                      {fecN1 && (
+                        <td className="px-6 py-3 text-right text-gray-600">
+                          {isNbLignes ? fmtNb(vN1 as number) : fmt(vN1 as number)}
+                        </td>
+                      )}
+                      {fecN && (
+                        <td className="px-6 py-3 text-right font-semibold text-gray-900">
+                          {isNbLignes ? fmtNb(vN as number) : fmt(vN as number)}
+                        </td>
+                      )}
+                      {fecN && fecN1 && (
+                        <td className="px-6 py-3 text-right">
+                          {var_ !== null ? (
+                            <span className={`inline-flex items-center gap-1 text-sm font-medium ${
+                              var_ > 0 ? (row.key === "totalCharges" ? "text-red-600" : "text-green-600")
+                              : var_ < 0 ? (row.key === "totalCharges" ? "text-green-600" : "text-red-600")
+                              : "text-gray-500"
+                            }`}>
+                              {var_ > 0 ? "+" : ""}{var_.toFixed(1)}%
+                              {var_ > 0 ? " ▲" : var_ < 0 ? " ▼" : ""}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Suggestions IA */}
+      {imports.filter((f) => f.suggestionsIA).map((f) => (
+        <div key={f.id} className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+          <div className="mb-2 flex items-center gap-2">
+            <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <h4 className="text-sm font-semibold text-amber-800">
+              Analyse IA — Exercice {f.exercice}
+            </h4>
+          </div>
+          <div className="whitespace-pre-wrap text-sm text-amber-900 leading-relaxed">
+            {f.suggestionsIA}
+          </div>
+        </div>
+      ))}
+
+      {/* Liste des fichiers importés */}
+      {imports.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <h4 className="mb-3 text-xs font-semibold uppercase text-gray-500">Fichiers importés</h4>
+          <div className="space-y-2">
+            {imports.map((f) => (
+              <div key={f.id} className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-4 py-2">
+                <div className="flex items-center gap-3">
+                  <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">{f.nomFichier}</span>
+                  <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                    Exercice {f.exercice}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(f.createdAt).toLocaleDateString("fr-FR")}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDelete(f.id)}
+                  className="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                  title="Supprimer"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* État vide */}
+      {imports.length === 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
+          <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="mt-3 text-gray-500">Aucun FEC importé pour {raisonSociale}.</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Importez le FEC (N-1 puis N) pour voir le chiffre d&apos;affaires, le résultat, l&apos;IS et une analyse IA.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface EchangeEntry {
   id: string

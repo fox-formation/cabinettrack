@@ -80,12 +80,66 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // collaborateurId from frontend is a User ID — resolve to CollaborateurDossier ID
+    // Note: DB has duplicate users (collab-* IDs + UUIDs for same person), so we
+    // look up by all user IDs sharing the same prenom as fallback.
+    let resolvedCollabId: string | null = null
+    if (collaborateurId) {
+      try {
+        // 1. Direct match as CollaborateurDossier ID
+        const directMatch = await prisma.collaborateurDossier.findFirst({
+          where: { id: collaborateurId },
+        })
+        if (directMatch) {
+          resolvedCollabId = directMatch.id
+        } else {
+          // 2. Match by userId + dossierId
+          const collabDossier = await prisma.collaborateurDossier.findFirst({
+            where: { userId: collaborateurId, dossierId },
+          })
+          if (collabDossier) {
+            resolvedCollabId = collabDossier.id
+          } else {
+            // 3. Fallback: find all user IDs with the same prenom (handles collab-* / UUID duplicates)
+            const user = await prisma.user.findUnique({ where: { id: collaborateurId }, select: { prenom: true } })
+            if (user) {
+              const sameNameUsers = await prisma.user.findMany({
+                where: { prenom: user.prenom, tenantId },
+                select: { id: true },
+              })
+              const allIds = sameNameUsers.map((u) => u.id)
+              const altMatch = await prisma.collaborateurDossier.findFirst({
+                where: { userId: { in: allIds }, dossierId },
+              })
+              if (altMatch) {
+                resolvedCollabId = altMatch.id
+              } else {
+                // 4. Create the link as last resort
+                const newCollab = await prisma.collaborateurDossier.create({
+                  data: { userId: collaborateurId, dossierId, roleOnDossier: "secondaire" },
+                })
+                resolvedCollabId = newCollab.id
+              }
+            }
+          }
+        }
+      } catch (collabErr) {
+        console.error("Failed to resolve collaborateurId:", collabErr)
+        resolvedCollabId = null
+      }
+    }
+
+    const parsedDate = new Date(dateContact)
+    if (isNaN(parsedDate.getTime())) {
+      return NextResponse.json({ error: "dateContact invalide" }, { status: 400 })
+    }
+
     const suivi = await prisma.suiviRevision.create({
       data: {
         tenantId,
         dossierId,
-        dateContact: new Date(dateContact),
-        collaborateurId: collaborateurId || null,
+        dateContact: parsedDate,
+        collaborateurId: resolvedCollabId,
         sens: sens || "SORTANT",
         sujet: sujet || null,
         resume: resume || null,
@@ -97,10 +151,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(suivi, { status: 201 })
   } catch (e) {
     console.error("POST /api/suivi-revision error:", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Erreur lors de la création" },
-      { status: 500 }
-    )
+    console.error("POST /api/suivi-revision body:", { dossierId, dateContact, collaborateurId, sens, sujet, statut })
+    const msg = e instanceof Error ? e.message : "Erreur lors de la création"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
@@ -139,7 +192,27 @@ export async function PATCH(req: NextRequest) {
     data.prochainContact = fields.prochainContact ? new Date(fields.prochainContact) : null
   }
   if (fields.collaborateurId !== undefined) {
-    data.collaborateurId = fields.collaborateurId || null
+    if (fields.collaborateurId) {
+      // Resolve User ID to CollaborateurDossier ID (handles collab-*/UUID duplicates)
+      let found = await prisma.collaborateurDossier.findFirst({
+        where: { userId: fields.collaborateurId, dossierId: existing.dossierId },
+      })
+      if (!found) {
+        const user = await prisma.user.findUnique({ where: { id: fields.collaborateurId }, select: { prenom: true } })
+        if (user) {
+          const sameNameUsers = await prisma.user.findMany({
+            where: { prenom: user.prenom, tenantId },
+            select: { id: true },
+          })
+          found = await prisma.collaborateurDossier.findFirst({
+            where: { userId: { in: sameNameUsers.map((u) => u.id) }, dossierId: existing.dossierId },
+          })
+        }
+      }
+      data.collaborateurId = found?.id || null
+    } else {
+      data.collaborateurId = null
+    }
   }
   if (fields.dateContact !== undefined) {
     data.dateContact = new Date(fields.dateContact)

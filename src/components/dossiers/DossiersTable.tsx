@@ -73,6 +73,8 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
     prochainContact: "",
   })
   const [exchangeSaving, setExchangeSaving] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   const openExchangeModal = useCallback((dossierId: string, raisonSociale: string) => {
     setExchangeForm({
@@ -84,8 +86,31 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
       statut: "RAS",
       prochainContact: "",
     })
+    setAiSuggestion(null)
     setExchangeModal({ dossierId, raisonSociale })
   }, [])
+
+  const fetchAiSuggestion = useCallback(async (resume: string) => {
+    if (!exchangeModal || resume.trim().length < 10) { setAiSuggestion(null); return }
+    setAiLoading(true)
+    try {
+      const res = await fetch("/api/ai/suggestion-echange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume,
+          sujet: exchangeForm.sujet,
+          sens: exchangeForm.sens,
+          raisonSociale: exchangeModal.raisonSociale,
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiSuggestion(data.suggestion)
+      }
+    } catch { /* silent */ }
+    finally { setAiLoading(false) }
+  }, [exchangeModal, exchangeForm.sujet, exchangeForm.sens])
 
   const submitExchange = useCallback(async () => {
     if (!exchangeModal) return
@@ -654,10 +679,26 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
                 <textarea
                   value={exchangeForm.resume}
                   onChange={(e) => setExchangeForm({ ...exchangeForm, resume: e.target.value })}
+                  onBlur={() => fetchAiSuggestion(exchangeForm.resume)}
                   rows={3}
                   placeholder="Notes du contact..."
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+                {aiLoading && (
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-400">
+                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+                    Analyse IA en cours...
+                  </div>
+                )}
+                {aiSuggestion && !aiLoading && (
+                  <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-600">
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                      Suggestions IA
+                    </div>
+                    <div className="whitespace-pre-wrap text-xs text-violet-900">{aiSuggestion}</div>
+                  </div>
+                )}
               </div>
 
               {/* Statut */}

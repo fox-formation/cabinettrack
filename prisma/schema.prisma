@@ -33,6 +33,7 @@ model Tenant {
   suiviRevisions SuiviRevision[]
   importHistories ImportHistory[]
   travauxSessions TravauxSession[]
+  fecImports      FecImport[]
   outlookConnection OutlookConnection?
 
   @@map("tenants")
@@ -292,6 +293,7 @@ model Dossier {
   suiviCourants             SuiviCourant[]
   suiviRevisions            SuiviRevision[]
   travauxSessions           TravauxSession[]
+  fecImports                FecImport[]
 
   @@index([tenantId])
   @@index([cabinetId])
@@ -573,4 +575,33 @@ model TravauxSession {
 
   @@index([tenantId, dossierId])
   @@map("travaux_sessions")
+}
+
+// ──────────────────────────────────────────────
+// Imports FEC (Fichier des Écritures Comptables)
+// ──────────────────────────────────────────────
+
+model FecImport {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  dossierId String   @map("dossier_id")
+
+  exercice          Int      // ex: 2025, 2024
+  nomFichier        String   @map("nom_fichier")
+  nbLignes          Int      @map("nb_lignes")
+  chiffreAffaires   Float?   @map("chiffre_affaires")
+  resultat          Float?
+  montantIS         Float?   @map("montant_is")
+  totalCharges      Float?   @map("total_charges")
+  totalProduits     Float?   @map("total_produits")
+  suggestionsIA     String?  @map("suggestions_ia") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dossierId, exercice])
+  @@index([tenantId, dossierId])
+  @@map("fec_imports")
 }
