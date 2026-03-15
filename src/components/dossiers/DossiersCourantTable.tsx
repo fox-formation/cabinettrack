@@ -615,6 +615,9 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
                   </select>
                 </div>
               </th>
+              <th className="px-2 py-2 text-right">CA</th>
+              <th className="px-2 py-2 text-right">Résultat</th>
+              <th className="px-2 py-2 text-right">Écrit.</th>
               <th className="px-2 py-2 text-center">Retard</th>
               {columns.map((col, i) => (
                 <th key={i} className="px-1 py-2 text-center">
@@ -626,7 +629,7 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={5 + columns.length} className="px-4 py-8 text-center">
+                <td colSpan={8 + columns.length} className="px-4 py-8 text-center">
                   <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
                 </td>
               </tr>
@@ -674,6 +677,24 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
                           annualAv >= 100 ? "text-green-600" : annualAv > 50 ? "text-amber-600" : annualAv > 0 ? "text-gray-600" : "text-gray-400"
                         }`}>{annualAv}%</span>
                       </div>
+                    </td>
+                    {/* FEC columns */}
+                    <td className="px-2 py-1.5 text-right text-[11px] tabular-nums text-gray-600">
+                      {d.fec?.chiffreAffaires != null
+                        ? (d.fec.chiffreAffaires / 1000).toFixed(0) + " k€"
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-[11px] tabular-nums">
+                      {d.fec?.resultat != null
+                        ? <span className={d.fec.resultat >= 0 ? "text-green-600" : "text-red-600"}>
+                            {(d.fec.resultat / 1000).toFixed(0)} k€
+                          </span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-[11px] tabular-nums text-gray-600">
+                      {d.fec?.nbLignes != null
+                        ? d.fec.nbLignes.toLocaleString("fr-FR")
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       {retards.length > 0 ? (

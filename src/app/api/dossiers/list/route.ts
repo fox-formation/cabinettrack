@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   const tenantId = await getTenantId()
 
-  const [dossiers, collaborateurs] = await Promise.all([
+  const [dossiers, collaborateurs, fecImports] = await Promise.all([
     prisma.dossier.findMany({
       where: { tenantId, statut: "ACTIF" },
       include: {
@@ -32,7 +32,27 @@ export async function GET() {
       select: { id: true, prenom: true, role: true },
       orderBy: { prenom: "asc" },
     }),
+    // Fetch the most recent FEC per dossier (for CA, résultat, nb écritures)
+    prisma.fecImport.findMany({
+      where: { tenantId },
+      orderBy: { exercice: "desc" },
+      select: {
+        dossierId: true,
+        exercice: true,
+        chiffreAffaires: true,
+        resultat: true,
+        nbLignes: true,
+      },
+    }),
   ])
+
+  // Build a map: dossierId → most recent FEC data
+  const fecByDossier = new Map<string, { exercice: number; chiffreAffaires: number | null; resultat: number | null; nbLignes: number }>()
+  for (const fec of fecImports) {
+    if (!fecByDossier.has(fec.dossierId)) {
+      fecByDossier.set(fec.dossierId, fec)
+    }
+  }
 
   const rows = dossiers.map((d) => ({
     id: d.id,
@@ -51,6 +71,7 @@ export async function GET() {
     typeMission: d.typeMission,
     paie: d.paie,
     commentaireBilan: d.commentaireBilan,
+    fec: fecByDossier.get(d.id) ?? null,
   }))
 
   return NextResponse.json({ dossiers: rows, collaborateurs })

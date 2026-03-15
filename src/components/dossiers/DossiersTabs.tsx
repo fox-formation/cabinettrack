@@ -7,6 +7,13 @@ import type { CourantStats } from "./DossiersCourantTable"
 import DossiersTachesTable from "./DossiersTachesTable"
 import DossiersRevisionTable from "./DossiersRevisionTable"
 
+export interface FecInfo {
+  exercice: number
+  chiffreAffaires: number | null
+  resultat: number | null
+  nbLignes: number
+}
+
 export interface DossierRow {
   id: string
   raisonSociale: string
@@ -20,6 +27,7 @@ export interface DossierRow {
   typeMission: string | null
   paie: boolean
   commentaireBilan: string | null
+  fec: FecInfo | null
 }
 
 export interface Collaborateur {

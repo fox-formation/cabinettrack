@@ -17,17 +17,7 @@ function prefixComment(text: string, numero: string | null): string {
   return `[${tag} ${dd}.${mm}.${yy}] ${text.trim()}`
 }
 
-interface DossierRow {
-  id: string
-  raisonSociale: string
-  collaborateurPrincipal: { id: string; prenom: string; role: string } | null
-  firstAssistant: { prenom: string } | null
-  datePrevueArreteBilan: string | null
-  dateClotureExercice: string | null
-  avancement: number
-  etapeStatuts: (string | null)[]
-  commentaireBilan: string | null
-}
+import type { DossierRow } from "./DossiersTabs"
 
 interface CollabOption {
   id: string
@@ -415,6 +405,9 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
               <th className="px-3 py-2">Clôture</th>
               <th className="px-3 py-2">Date limite</th>
               <th className="px-3 py-2">Avancement</th>
+              <th className="px-3 py-2 text-right">CA</th>
+              <th className="px-3 py-2 text-right">Résultat</th>
+              <th className="px-3 py-2 text-right">Écrit.</th>
               <th className="px-3 py-2">Commentaire bilan</th>
               <th className="px-1 py-2 text-center" title="Notes par cycle">
                 <svg className="mx-auto h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -534,6 +527,24 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
                         />
                       </div>
                     </button>
+                  </td>
+                  {/* FEC columns */}
+                  <td className="px-3 py-2 text-right text-[11px] tabular-nums text-gray-600">
+                    {d.fec?.chiffreAffaires != null
+                      ? (d.fec.chiffreAffaires / 1000).toFixed(0) + " k€"
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] tabular-nums">
+                    {d.fec?.resultat != null
+                      ? <span className={d.fec.resultat >= 0 ? "text-green-600" : "text-red-600"}>
+                          {(d.fec.resultat / 1000).toFixed(0)} k€
+                        </span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] tabular-nums text-gray-600">
+                    {d.fec?.nbLignes != null
+                      ? d.fec.nbLignes.toLocaleString("fr-FR")
+                      : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2">
                     <CommentaireBilanCell dossierId={d.id} initial={d.commentaireBilan} />
