@@ -1465,7 +1465,7 @@ interface FecData {
   resultatExploitation: number | null
   margeExploitation: number | null
   montantIS: number | null
-  lignesParJournal: Record<string, number> | null
+  lignesParJournal: Record<string, { nb: number; label: string } | number> | null
   suggestionsIA: string | null
   createdAt: string
 }
@@ -1550,6 +1550,19 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
   const colImports = viewExercice === "all"
     ? chronoImports
     : chronoImports.filter((f) => f.exercice === viewExercice)
+
+  // Helper: read nb from journal entry (supports old format number and new { nb, label })
+  const getJournalNb = (entry: { nb: number; label: string } | number | undefined): number => {
+    if (entry === undefined) return 0
+    return typeof entry === "number" ? entry : entry.nb
+  }
+  const getJournalLabel = (code: string): string => {
+    for (const f of imports) {
+      const entry = (f.lignesParJournal ?? {})[code]
+      if (entry && typeof entry === "object" && entry.label && entry.label !== code) return entry.label
+    }
+    return code
+  }
 
   // Collect all journal codes across all imports
   const allJournaux = Array.from(
@@ -1714,12 +1727,15 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                     <td className="py-2 pl-10 pr-6 text-xs text-gray-600">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                        {journal}
+                        <span className="font-medium">{journal}</span>
+                        {getJournalLabel(journal) !== journal && (
+                          <span className="text-gray-400">— {getJournalLabel(journal)}</span>
+                        )}
                       </span>
                     </td>
                     {colImports.map((f) => {
-                      const journalData = (f.lignesParJournal ?? {}) as Record<string, number>
-                      const count = journalData[journal] ?? 0
+                      const entry = (f.lignesParJournal ?? {})[journal]
+                      const count = getJournalNb(entry)
                       return (
                         <td key={f.exercice} className="px-6 py-2 text-right text-xs text-gray-600">
                           {count > 0 ? fmtNb(count) : "—"}
@@ -1730,8 +1746,8 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
                       <td className="px-6 py-2 text-right text-xs">
                         {(() => {
                           const lastTwo = colImports.slice(-2)
-                          const j0 = ((lastTwo[0].lignesParJournal ?? {}) as Record<string, number>)[journal] ?? 0
-                          const j1 = ((lastTwo[1].lignesParJournal ?? {}) as Record<string, number>)[journal] ?? 0
+                          const j0 = getJournalNb((lastTwo[0].lignesParJournal ?? {})[journal])
+                          const j1 = getJournalNb((lastTwo[1].lignesParJournal ?? {})[journal])
                           const v = j0 > 0 ? ((j1 - j0) / j0) * 100 : null
                           if (v === null) return <span className="text-gray-400">—</span>
                           return (

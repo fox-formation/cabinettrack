@@ -19,7 +19,7 @@ interface FecKpis {
   resultatExploitation: number
   margeExploitation: number | null
   montantIS: number
-  lignesParJournal: Record<string, number>
+  lignesParJournal: Record<string, { nb: number; label: string }>
 }
 
 function detectSeparator(firstLine: string): string {
@@ -65,6 +65,9 @@ function parseFec(content: string): FecKpis {
   const journalIdx = headers.findIndex((h) =>
     ["journalcode", "journal_code", "journal", "code_journal", "codejournal"].includes(h)
   )
+  const journalLibIdx = headers.findIndex((h) =>
+    ["journallib", "journal_lib", "libelle_journal", "libellejournal", "journallibelle"].includes(h)
+  )
 
   if (compteIdx === -1 || debitIdx === -1 || creditIdx === -1) {
     throw new Error(
@@ -84,7 +87,7 @@ function parseFec(content: string): FecKpis {
   let creditProduitsExploit = 0
   let debitCompte695 = 0
   let nbLignes = 0
-  const lignesParJournal: Record<string, number> = {}
+  const lignesParJournal: Record<string, { nb: number; label: string }> = {}
 
   const parseAmount = (val: string): number => {
     if (!val) return 0
@@ -107,7 +110,13 @@ function parseFec(content: string): FecKpis {
     if (journalIdx !== -1 && cols[journalIdx]) {
       const journal = cols[journalIdx].trim().replace(/^"|"$/g, "").toUpperCase()
       if (journal) {
-        lignesParJournal[journal] = (lignesParJournal[journal] || 0) + 1
+        if (!lignesParJournal[journal]) {
+          const lib = journalLibIdx !== -1 && cols[journalLibIdx]
+            ? cols[journalLibIdx].trim().replace(/^"|"$/g, "")
+            : journal
+          lignesParJournal[journal] = { nb: 0, label: lib }
+        }
+        lignesParJournal[journal].nb++
       }
     }
 
