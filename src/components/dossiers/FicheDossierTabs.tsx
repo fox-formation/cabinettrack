@@ -1542,13 +1542,14 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
 
   if (loading) return <div className="py-8 text-center text-gray-400">Chargement...</div>
 
-  // Filtered imports based on view selection
-  const visibleImports = viewExercice === "all"
-    ? imports
-    : imports.filter((f) => f.exercice === viewExercice)
+  // imports arrives sorted desc (2025, 2024, 2023...) from API
+  // Reverse to chronological order: oldest → newest (N-2, N-1, N)
+  const chronoImports = [...imports].reverse()
 
-  // For comparison: always use 2 most recent of visible
-  const colImports = visibleImports.slice(0, viewExercice === "all" ? imports.length : 1)
+  // Filtered imports based on view selection
+  const colImports = viewExercice === "all"
+    ? chronoImports
+    : chronoImports.filter((f) => f.exercice === viewExercice)
 
   // Collect all journal codes across all imports
   const allJournaux = Array.from(
@@ -1617,11 +1618,15 @@ function TabFEC({ dossierId, raisonSociale, regimeFiscal }: { dossierId: string;
               <thead>
                 <tr className="border-b text-xs font-medium uppercase text-gray-500">
                   <th className="px-6 py-3 text-left">Indicateur</th>
-                  {colImports.map((f, i) => (
-                    <th key={f.exercice} className="px-6 py-3 text-right">
-                      {colImports.length > 1 && i === colImports.length - 1 ? "N" : colImports.length > 1 ? `N-${colImports.length - 1 - i}` : "N"} ({f.exercice})
-                    </th>
-                  ))}
+                  {colImports.map((f, i) => {
+                    const offset = colImports.length - 1 - i
+                    const label = colImports.length === 1 ? "N" : offset === 0 ? "N" : `N-${offset}`
+                    return (
+                      <th key={f.exercice} className="px-6 py-3 text-right">
+                        {label} ({f.exercice})
+                      </th>
+                    )
+                  })}
                   {colImports.length >= 2 && <th className="px-6 py-3 text-right">Variation</th>}
                 </tr>
               </thead>
