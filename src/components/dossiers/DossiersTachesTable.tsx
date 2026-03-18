@@ -1,7 +1,9 @@
 "use client"
 
+import { useCallback } from "react"
 import Link from "next/link"
 import type { DossierRow } from "./DossiersTabs"
+import { downloadCSV } from "@/lib/exports/useExportCSV"
 
 const ROLE_LABELS: Record<string, string> = {
   ASSISTANT: "Assistant",
@@ -31,9 +33,46 @@ interface DossiersTachesTableProps {
   dossiers: DossierRow[]
 }
 
+function statutLabel(val: string | null): string {
+  if (val === "EFFECTUE") return "Effectué"
+  if (val === "EN_COURS") return "En cours"
+  if (val === "DEMI") return "50%"
+  if (val === "QUART") return "25%"
+  return ""
+}
+
 export default function DossiersTachesTable({ dossiers }: DossiersTachesTableProps) {
+  const exportCSV = useCallback(() => {
+    const headers = [
+      "Dossier", "Collaborateur", "Assistant",
+      ...TACHES.map((t) => t.label),
+    ]
+    const rows = dossiers.map((d) => [
+      d.raisonSociale,
+      d.collaborateurPrincipal?.prenom ?? "",
+      d.firstAssistant?.prenom ?? "",
+      ...TACHES.map((t) => {
+        const idx = getEtapeIndex(t.key)
+        return statutLabel(idx !== -1 ? d.etapeStatuts[idx] : null)
+      }),
+    ])
+    downloadCSV(`dossiers-taches-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows)
+  }, [dossiers])
+
   return (
-    <div className="overflow-hidden rounded-xl bg-white shadow-sm">
+    <div>
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Exporter CSV
+        </button>
+      </div>
+      <div className="overflow-hidden rounded-xl bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
           <tr>
@@ -83,6 +122,7 @@ export default function DossiersTachesTable({ dossiers }: DossiersTachesTablePro
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

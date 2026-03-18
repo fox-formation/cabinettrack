@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import type { DossierRow, Collaborateur } from "./DossiersTabs"
+import { downloadCSV } from "@/lib/exports/useExportCSV"
 
 // ── Types ──────────────────────────────────────────────
 
@@ -13,8 +14,10 @@ interface SuiviRevisionEntry {
   sens: "SORTANT" | "ENTRANT"
   sujet: string | null
   resume: string | null
-  statut: "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE"
+  statut: "RAS" | "ACTION_CABINET" | "ACTION_CLIENT" | "DEMANDE_CLIENT" | "ACTION_REQUISE"
   prochainContact: string | null
+  dateReponse: string | null
+  reponse: string | null
   collaborateur: {
     user: { id: string; prenom: string; role: string }
   } | null
@@ -27,11 +30,18 @@ interface Props {
 
 // ── Helpers ────────────────────────────────────────────
 
-const STATUT_CONFIG = {
-  RAS: { label: "RAS", bg: "bg-green-100", text: "text-green-800", dot: "bg-green-500" },
-  DEMANDE_CLIENT: { label: "Demande client", bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500" },
-  ACTION_REQUISE: { label: "Action requise", bg: "bg-red-100", text: "text-red-800", dot: "bg-red-500" },
-} as const
+const STATUT_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; alerte: boolean }> = {
+  RAS:              { label: "RAS",              bg: "bg-green-100",  text: "text-green-800",  dot: "bg-green-500",  alerte: false },
+  ACTION_CABINET:   { label: "Action cabinet",   bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
+  ACTION_CLIENT:    { label: "Action client",    bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
+  // Legacy statuts (backward compat with existing data)
+  DEMANDE_CLIENT:   { label: "Action client",    bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
+  ACTION_REQUISE:   { label: "Action cabinet",   bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
+}
+
+function isActionnable(statut: string): boolean {
+  return STATUT_CONFIG[statut]?.alerte === true
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—"
@@ -76,12 +86,17 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     sens: "SORTANT" as "SORTANT" | "ENTRANT",
     sujet: "",
     resume: "",
-    statut: "RAS" as "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE",
+    statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
     prochainContact: defaultProchainContact(),
   })
   const [saving, setSaving] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
+
+  // Clore modal state
+  const [cloreModal, setCloreModal] = useState<{ entryId: string; dossierId: string; sujet: string | null } | null>(null)
+  const [cloreReponse, setCloreReponse] = useState("")
+  const [cloreSaving, setCloreSaving] = useState(false)
 
   // Panel state (historique)
   const [panelDossierId, setPanelDossierId] = useState<string | null>(null)
@@ -132,7 +147,7 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     for (const d of dossiers) {
       const latest = latestPerDossier[d.id]
       if (latest) {
-        if (latest.statut === "ACTION_REQUISE") actionsRequises++
+        if (isActionnable(latest.statut) && !latest.dateReponse) actionsRequises++
         if (latest.prochainContact) {
           const pc = new Date(latest.prochainContact)
           pc.setHours(0, 0, 0, 0)
@@ -179,7 +194,7 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
       sens: "SORTANT",
       sujet: "",
       resume: "",
-      statut: "RAS",
+      statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
       prochainContact: defaultProchainContact(),
     })
     setAiSuggestion(null)
@@ -219,6 +234,37 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     }
   }
 
+  // Open the clore modal for an actionnable entry
+  const openCloreModal = useCallback((entryId: string, dossierId: string, sujet: string | null) => {
+    setCloreModal({ entryId, dossierId, sujet })
+    setCloreReponse("")
+  }, [])
+
+  // Submit the clore (dateReponse + reponse text)
+  const submitClore = useCallback(async () => {
+    if (!cloreModal) return
+    setCloreSaving(true)
+    const today = new Date().toISOString().slice(0, 10)
+    // Optimistic update
+    setSuiviParDossier((prev) => {
+      const next = { ...prev }
+      const entries = next[cloreModal.dossierId]
+      if (entries) {
+        next[cloreModal.dossierId] = entries.map((e) =>
+          e.id === cloreModal.entryId ? { ...e, dateReponse: today, reponse: cloreReponse || null } : e
+        )
+      }
+      return next
+    })
+    await fetch("/api/suivi-revision", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: cloreModal.entryId, dateReponse: today, reponse: cloreReponse || null }),
+    })
+    setCloreSaving(false)
+    setCloreModal(null)
+  }, [cloreModal, cloreReponse])
+
   // Sorted dossiers: action requise first, then retard, then rest
   const sortedDossiers = useMemo(() => {
     const now = new Date()
@@ -227,8 +273,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
       const la = latestPerDossier[a.id]
       const lb = latestPerDossier[b.id]
       // Action requise first
-      const aAction = la?.statut === "ACTION_REQUISE" ? 0 : 1
-      const bAction = lb?.statut === "ACTION_REQUISE" ? 0 : 1
+      const aAction = (la && isActionnable(la.statut) && !la.dateReponse) ? 0 : 1
+      const bAction = (lb && isActionnable(lb.statut) && !lb.dateReponse) ? 0 : 1
       if (aAction !== bAction) return aAction - bAction
       // Then retard
       const aRetard = !la || (la.prochainContact && new Date(la.prochainContact) < now) ? 0 : 1
@@ -243,6 +289,27 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
   const panelDossier = dossiers.find((d) => d.id === panelDossierId)
   const panelEntries = panelDossierId ? (suiviParDossier[panelDossierId] || []) : []
 
+  const exportCSV = useCallback(() => {
+    const headers = [
+      "Dossier", "Collaborateur", "Clôture", "Dernier contact",
+      "Sens", "Sujet", "Statut", "Prochain contact",
+    ]
+    const rows = sortedDossiers.map((d) => {
+      const latest = latestPerDossier[d.id]
+      return [
+        d.raisonSociale,
+        d.collaborateurPrincipal?.prenom ?? "",
+        d.dateClotureExercice ? formatDate(d.dateClotureExercice) : "",
+        latest ? formatDate(latest.dateContact) : "Jamais",
+        latest?.sens === "ENTRANT" ? "Entrant" : latest?.sens === "SORTANT" ? "Sortant" : "",
+        latest?.sujet ?? "",
+        latest ? STATUT_CONFIG[latest.statut].label : "",
+        latest?.prochainContact ? formatDate(latest.prochainContact) : "",
+      ]
+    })
+    downloadCSV(`dossiers-revision-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows)
+  }, [sortedDossiers, latestPerDossier])
+
   if (dossiers.length === 0) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
@@ -256,6 +323,19 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
 
   return (
     <div>
+      {/* Export button */}
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Exporter CSV
+        </button>
+      </div>
+
       {/* Stats cards */}
       <div className="mb-4 grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -327,12 +407,31 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                     </td>
                     <td className="px-4 py-3">
                       {latest ? (
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUT_CONFIG[latest.statut].bg} ${STATUT_CONFIG[latest.statut].text}`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${STATUT_CONFIG[latest.statut].dot}`} />
-                          {STATUT_CONFIG[latest.statut].label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUT_CONFIG[latest.statut].bg} ${STATUT_CONFIG[latest.statut].text}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${STATUT_CONFIG[latest.statut].dot}`} />
+                            {STATUT_CONFIG[latest.statut].label}
+                          </span>
+                          {isActionnable(latest.statut) && !latest.dateReponse && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openCloreModal(latest.id, d.id, latest.sujet)
+                              }}
+                              className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 transition-colors hover:bg-green-200"
+                              title="Clore cette action"
+                            >
+                              Clore
+                            </button>
+                          )}
+                          {isActionnable(latest.statut) && latest.dateReponse && (
+                            <span className="text-[10px] text-green-600">
+                              Fait {formatDateShort(latest.dateReponse)}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
@@ -514,7 +613,7 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                   Statut
                 </label>
                 <div className="flex gap-2">
-                  {(["RAS", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const).map((s) => (
+                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -529,6 +628,12 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                     </button>
                   ))}
                 </div>
+                {modalForm.statut === "ACTION_CABINET" && (
+                  <p className="mt-1.5 text-[11px] text-red-600">Le cabinet doit agir (rappeler, préparer un doc...) — apparaitra dans les alertes</p>
+                )}
+                {modalForm.statut === "ACTION_CLIENT" && (
+                  <p className="mt-1.5 text-[11px] text-orange-600">Le client doit nous fournir qqch / revenir vers nous — apparaitra dans les alertes</p>
+                )}
               </div>
 
               {/* Prochain contact */}
@@ -558,6 +663,49 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Clore une action */}
+      {cloreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Clore l&apos;action</h3>
+              <button onClick={() => setCloreModal(null)} className="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            {cloreModal.sujet && (
+              <p className="mb-3 text-sm text-gray-500">Sujet : {cloreModal.sujet}</p>
+            )}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Réponse donnée / action effectuée
+              </label>
+              <textarea
+                value={cloreReponse}
+                onChange={(e) => setCloreReponse(e.target.value)}
+                rows={3}
+                placeholder="Ex: Documents envoyés au client, Rappel effectué, Client a transmis les pièces..."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                autoFocus
+              />
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => setCloreModal(null)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={submitClore}
+                disabled={cloreSaving}
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {cloreSaving ? "Enregistrement..." : "Clore l'action"}
               </button>
             </div>
           </div>
@@ -651,6 +799,32 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                         <p className="mt-2 text-xs text-gray-400">
                           Prochain contact : {formatDate(entry.prochainContact)}
                         </p>
+                      )}
+                      {isActionnable(entry.statut) && (
+                        <div className="mt-2">
+                          {entry.dateReponse ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                                Fait le {formatDate(entry.dateReponse)}
+                              </span>
+                              {entry.reponse && (
+                                <p className="mt-1 rounded bg-green-50 px-2 py-1 text-xs text-green-800">
+                                  {entry.reponse}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openCloreModal(entry.id, entry.dossierId, entry.sujet)
+                              }}
+                              className="rounded bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 transition-colors hover:bg-green-200"
+                            >
+                              Clore cette action
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

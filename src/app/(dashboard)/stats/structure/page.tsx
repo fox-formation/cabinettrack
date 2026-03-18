@@ -18,6 +18,7 @@ export default async function StatsStructurePage() {
     parRegimeTva,
     parLogiciel,
     dossiers,
+    fecWithCollabs,
   ] = await Promise.all([
     prisma.dossier.groupBy({
       by: ["formeJuridique"],
@@ -49,6 +50,22 @@ export default async function StatsStructurePage() {
         collaborateurPrincipal: { select: { id: true, prenom: true } },
       },
     }),
+    // FEC imports avec collaborateur principal + assistants secondaires
+    prisma.fecImport.findMany({
+      where: { tenantId },
+      select: {
+        nbLignes: true,
+        dossier: {
+          select: {
+            raisonSociale: true,
+            collaborateurPrincipal: { select: { prenom: true } },
+            collaborateursSecondaires: {
+              select: { user: { select: { prenom: true } } },
+            },
+          },
+        },
+      },
+    }),
   ])
 
   const totalDossiers = dossiers.length
@@ -62,6 +79,25 @@ export default async function StatsStructurePage() {
     else collabCounts.set(key, { prenom: key, count: 1 })
   }
   const parCollaborateur = Array.from(collabCounts.values()).sort((a, b) => b.count - a.count)
+
+  // Lignes FEC par collaborateur principal et par assistant
+  const lignesParCollab = new Map<string, number>()
+  const lignesParAssistant = new Map<string, number>()
+  for (const fec of fecWithCollabs) {
+    const collab = fec.dossier.collaborateurPrincipal?.prenom ?? "Non affecté"
+    lignesParCollab.set(collab, (lignesParCollab.get(collab) ?? 0) + fec.nbLignes)
+    for (const cs of fec.dossier.collaborateursSecondaires) {
+      const assistant = cs.user.prenom
+      lignesParAssistant.set(assistant, (lignesParAssistant.get(assistant) ?? 0) + fec.nbLignes)
+    }
+  }
+  const lignesCollabSorted = Array.from(lignesParCollab.entries())
+    .map(([prenom, lignes]) => ({ prenom, lignes }))
+    .sort((a, b) => b.lignes - a.lignes)
+  const lignesAssistantSorted = Array.from(lignesParAssistant.entries())
+    .map(([prenom, lignes]) => ({ prenom, lignes }))
+    .sort((a, b) => b.lignes - a.lignes)
+  const totalLignes = fecWithCollabs.reduce((s, f) => s + f.nbLignes, 0)
 
   const formeLabels: Record<string, string> = {
     SAS: "SAS", SCI: "SCI", SARL: "SARL", EURL: "EURL", SASU: "SASU",
@@ -255,6 +291,82 @@ export default async function StatsStructurePage() {
             </div>
           </div>
         </div>
+
+        {/* Lignes FEC par collaborateur et par assistant */}
+        {totalLignes > 0 && (
+          <div className="mt-8 grid gap-8 lg:grid-cols-2">
+            {/* Par collaborateur principal */}
+            <div className="rounded-lg border bg-white p-6">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Lignes FEC par collaborateur
+              </h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-gray-500">
+                    <th className="pb-2 font-medium">Collaborateur</th>
+                    <th className="pb-2 text-right font-medium">Lignes</th>
+                    <th className="pb-2 text-right font-medium">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignesCollabSorted.map((c) => (
+                    <tr key={c.prenom} className="border-b last:border-0">
+                      <td className="py-2 text-gray-700">{c.prenom}</td>
+                      <td className="py-2 text-right font-mono text-gray-900">
+                        {c.lignes.toLocaleString("fr-FR")}
+                      </td>
+                      <td className="py-2 text-right text-gray-500">
+                        {Math.round((c.lignes / totalLignes) * 100)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-semibold">
+                    <td className="pt-2 text-gray-900">Total</td>
+                    <td className="pt-2 text-right font-mono text-gray-900">
+                      {totalLignes.toLocaleString("fr-FR")}
+                    </td>
+                    <td className="pt-2 text-right text-gray-500">100%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Par assistant */}
+            <div className="rounded-lg border bg-white p-6">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Lignes FEC par assistant
+              </h2>
+              {lignesAssistantSorted.length === 0 ? (
+                <p className="text-sm text-gray-400">Aucun assistant affecté</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="pb-2 font-medium">Assistant</th>
+                      <th className="pb-2 text-right font-medium">Lignes</th>
+                      <th className="pb-2 text-right font-medium">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lignesAssistantSorted.map((a) => (
+                      <tr key={a.prenom} className="border-b last:border-0">
+                        <td className="py-2 text-gray-700">{a.prenom}</td>
+                        <td className="py-2 text-right font-mono text-gray-900">
+                          {a.lignes.toLocaleString("fr-FR")}
+                        </td>
+                        <td className="py-2 text-right text-gray-500">
+                          {Math.round((a.lignes / totalLignes) * 100)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
     </main>
   )
 }

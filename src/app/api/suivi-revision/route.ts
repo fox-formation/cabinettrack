@@ -4,7 +4,7 @@ import { getTenantId } from "@/lib/tenant"
 
 export const dynamic = "force-dynamic"
 
-const STATUTS_VALIDES = ["RAS", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const
+const STATUTS_VALIDES = ["RAS", "ACTION_CABINET", "ACTION_CLIENT", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const
 
 /**
  * GET /api/suivi-revision?dossierId=xxx
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const tenantId = await getTenantId()
   const body = await req.json()
-  const { dossierId, dateContact, collaborateurId, sens, sujet, resume, statut, prochainContact } = body
+  const { dossierId, dateContact, collaborateurId, sens, sujet, resume, statut, prochainContact, dateReponse, reponse } = body
 
   if (!dossierId || !dateContact) {
     return NextResponse.json({ error: "dossierId and dateContact are required" }, { status: 400 })
@@ -145,6 +145,8 @@ export async function POST(req: NextRequest) {
         resume: resume || null,
         statut: statut || "RAS",
         prochainContact: prochainContact ? new Date(prochainContact) : null,
+        dateReponse: dateReponse ? new Date(dateReponse) : null,
+        reponse: reponse || null,
       },
     })
 
@@ -216,6 +218,12 @@ export async function PATCH(req: NextRequest) {
   }
   if (fields.dateContact !== undefined) {
     data.dateContact = new Date(fields.dateContact)
+  }
+  if (fields.dateReponse !== undefined) {
+    data.dateReponse = fields.dateReponse ? new Date(fields.dateReponse) : null
+  }
+  if (fields.reponse !== undefined) {
+    data.reponse = fields.reponse || null
   }
 
   const suivi = await prisma.suiviRevision.update({

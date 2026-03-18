@@ -22,15 +22,22 @@ export default async function DashboardLayout({
 
   try {
     const tenantId = await getTenantId()
-    const [alertes, emails] = await Promise.all([
+    const [alertes, emails, actionsOuvertes] = await Promise.all([
       prisma.alerte.count({
         where: { tenantId, acquittee: false, niveau: { in: ["WARNING", "URGENT", "CRITIQUE"] } },
       }),
       prisma.email.count({
         where: { tenantId, valide: false },
       }),
+      prisma.suiviRevision.count({
+        where: {
+          tenantId,
+          statut: { in: ["ACTION_CABINET", "ACTION_CLIENT", "ACTION_REQUISE", "DEMANDE_CLIENT"] },
+          dateReponse: null,
+        },
+      }),
     ])
-    alertesCount = alertes
+    alertesCount = alertes + actionsOuvertes
     emailsNonLus = emails
   } catch {
     // No tenant yet — badges at 0

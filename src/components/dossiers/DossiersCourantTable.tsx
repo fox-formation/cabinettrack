@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Link from "next/link"
 import type { DossierRow } from "./DossiersTabs"
+import { downloadCSV } from "@/lib/exports/useExportCSV"
 
 // ──────────────────────────────────────────────
 // Types & constants
@@ -514,6 +515,35 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
         { tri: 3, label: "T4" },
       ]
 
+  const exportCSV = useCallback(() => {
+    const headers = [
+      "Dossier", "Collaborateur", "Clôture", "Avancement %",
+      "CA (€)", "Résultat (€)", "Nb écritures", "Retard",
+      ...Array.from({ length: 12 }, (_, i) => `M${i + 1} %`),
+    ]
+    const rows = displayDossiers.map((d) => {
+      const dSuivis = suivis[d.id] ?? {}
+      const meta = allPeriodesAndMeta.perDossier[d.id]
+      const annualAv = getAnnualAvancement(d.id, d.paie)
+      const retards = getRetardMois(d.id, d.paie)
+      const monthPcts = meta
+        ? meta.allYearPeriodes.map((p) => monthAvancement(dSuivis[p], d.paie))
+        : Array(12).fill(0)
+      return [
+        d.raisonSociale,
+        d.collaborateurPrincipal?.prenom ?? "",
+        d.dateClotureExercice ? new Date(d.dateClotureExercice).toLocaleDateString("fr-FR") : "",
+        annualAv,
+        d.fec?.chiffreAffaires ?? "",
+        d.fec?.resultat ?? "",
+        d.fec?.nbLignes ?? "",
+        retards.join(", "),
+        ...monthPcts,
+      ]
+    })
+    downloadCSV(`dossiers-courant-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows)
+  }, [displayDossiers, suivis, allPeriodesAndMeta])
+
   return (
     <>
       {/* View toggle + mission filters */}
@@ -531,6 +561,15 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
           <span className="text-[10px] text-gray-400">
             {mensuel ? "M1-M12" : "T1-T4"}
           </span>
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            CSV
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
           {MISSION_FILTERS.map((m) => {

@@ -18,6 +18,7 @@ datasource db {
 model Tenant {
   id        String   @id @default(uuid())
   nom       String
+  domaines  String[] @default([])
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -184,9 +185,11 @@ enum SuiviEtape {
 }
 
 enum StatutRevision {
-  RAS
-  DEMANDE_CLIENT
-  ACTION_REQUISE
+  RAS                // Rien à faire — ne va pas dans les alertes
+  ACTION_CABINET     // Le cabinet doit agir (rappeler, préparer un doc, etc.)
+  ACTION_CLIENT      // Le client doit nous fournir qqch / revenir vers nous
+  DEMANDE_CLIENT     // Legacy — traité comme ACTION_CLIENT
+  ACTION_REQUISE     // Legacy — traité comme ACTION_CABINET
 }
 
 enum SensContact {
@@ -389,6 +392,8 @@ model SuiviRevision {
   resume          String?         @db.Text
   statut          StatutRevision  @default(RAS)
   prochainContact DateTime?       @map("prochain_contact") @db.Date
+  dateReponse     DateTime?       @map("date_reponse") @db.Date
+  reponse         String?         @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

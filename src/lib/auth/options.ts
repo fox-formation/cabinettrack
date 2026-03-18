@@ -4,7 +4,8 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { createClient } from "@supabase/supabase-js"
 import { prisma } from "@/lib/db/prisma"
 
-const ALLOWED_DOMAINS = [
+// Hardcoded fallback domains (used if DB is unreachable)
+const FALLBACK_DOMAINS = [
   "fiduciaire-villeurbannaise.com",
   "fiduciaire-villeurbannaise.fr",
   "fiduciaire.villeurbannaise.fr",
@@ -12,9 +13,22 @@ const ALLOWED_DOMAINS = [
   "finatec-expertise.fr",
 ]
 
-function isAllowedDomain(email: string): boolean {
+async function isAllowedDomain(email: string): Promise<boolean> {
   const domain = email.split("@")[1]?.toLowerCase()
-  return !!domain && ALLOWED_DOMAINS.includes(domain)
+  if (!domain) return false
+
+  // Check from DB first (multi-tenant)
+  try {
+    const tenant = await prisma.tenant.findFirst({
+      where: { domaines: { has: domain } },
+      select: { id: true },
+    })
+    if (tenant) return true
+  } catch {
+    // DB unreachable — use fallback
+  }
+
+  return FALLBACK_DOMAINS.includes(domain)
 }
 
 console.log("[auth] NEXTAUTH_SECRET present:", !!process.env.NEXTAUTH_SECRET)
@@ -30,7 +44,7 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
 
-        if (!isAllowedDomain(credentials.email)) return null
+        if (!await isAllowedDomain(credentials.email)) return null
 
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,7 +85,7 @@ export const authOptions: NextAuthOptions = {
 
       // Azure AD: check domain
       const email = user.email
-      if (!email || !isAllowedDomain(email)) {
+      if (!email || !await isAllowedDomain(email)) {
         return "/login?error=unauthorized"
       }
       return true
@@ -85,10 +99,65 @@ export const authOptions: NextAuthOptions = {
         // Find or create the user in our DB and attach tenant
         const email = user.email
         if (email) {
-          const dbUser = await prisma.user.findFirst({
+          let dbUser = await prisma.user.findFirst({
             where: { email },
             select: { id: true, tenantId: true, role: true, numero: true, prenom: true, nom: true },
           })
+
+          // If no user found, resolve tenant by domain then try to match existing user by prenom
+          if (!dbUser) {
+            const domain = email.split("@")[1]?.toLowerCase()
+            if (domain) {
+              const tenant = await prisma.tenant.findFirst({
+                where: { domaines: { has: domain } },
+              })
+              if (tenant) {
+                const displayName = user.name || email.split("@")[0]
+                const parts = displayName.split(/\s+/)
+                const prenom = parts[0] || displayName
+                const nom = parts.slice(1).join(" ") || ""
+
+                // Try to match an existing user by prenom (imported from Excel without email)
+                const existingByPrenom = await prisma.user.findFirst({
+                  where: {
+                    tenantId: tenant.id,
+                    prenom: { equals: prenom, mode: "insensitive" },
+                    email: null,
+                  },
+                  select: { id: true, tenantId: true, role: true, numero: true, prenom: true, nom: true },
+                })
+
+                if (existingByPrenom) {
+                  // Link the existing user to this email
+                  dbUser = await prisma.user.update({
+                    where: { id: existingByPrenom.id },
+                    data: {
+                      email,
+                      nom: nom || existingByPrenom.nom,
+                      microsoftId: account.provider === "azure-ad" ? user.id : undefined,
+                    },
+                    select: { id: true, tenantId: true, role: true, numero: true, prenom: true, nom: true },
+                  })
+                  console.log(`[auth] Linked existing user ${prenom} to email ${email}`)
+                } else {
+                  // Create new user
+                  dbUser = await prisma.user.create({
+                    data: {
+                      tenantId: tenant.id,
+                      email,
+                      prenom,
+                      nom,
+                      role: "CONFIRME",
+                      microsoftId: account.provider === "azure-ad" ? user.id : undefined,
+                    },
+                    select: { id: true, tenantId: true, role: true, numero: true, prenom: true, nom: true },
+                  })
+                  console.log(`[auth] Auto-provisioned new user ${email} for tenant ${tenant.nom}`)
+                }
+              }
+            }
+          }
+
           if (dbUser) {
             token.userId = dbUser.id
             token.tenantId = dbUser.tenantId
@@ -96,7 +165,7 @@ export const authOptions: NextAuthOptions = {
             token.numero = dbUser.numero ?? `${dbUser.prenom.charAt(0)}${(dbUser.nom || "").substring(0, 2)}`.toUpperCase()
 
             // Link Microsoft ID if not already linked
-            if (user.id && !await prisma.user.findUnique({ where: { microsoftId: user.id } })) {
+            if (user.id && account.provider === "azure-ad" && !dbUser.numero) {
               await prisma.user.update({
                 where: { id: dbUser.id },
                 data: { microsoftId: user.id },

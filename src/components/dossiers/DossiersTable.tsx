@@ -6,6 +6,7 @@ import Link from "next/link"
 import EtatPanel from "./EtatPanel"
 import NotesModal from "./NotesModal"
 import { ETAPES_BILAN } from "@/lib/dossiers/avancement"
+import { downloadCSV } from "@/lib/exports/useExportCSV"
 
 function prefixComment(text: string, numero: string | null): string {
   if (!text.trim()) return ""
@@ -59,7 +60,7 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
     sens: "SORTANT" as "SORTANT" | "ENTRANT",
     sujet: "",
     resume: "",
-    statut: "RAS" as "RAS" | "DEMANDE_CLIENT" | "ACTION_REQUISE",
+    statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
     prochainContact: "",
   })
   const [exchangeSaving, setExchangeSaving] = useState(false)
@@ -337,8 +338,51 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
     }
   }, [selectedIds])
 
+  const exportCSV = useCallback(() => {
+    const etapeLabels = ETAPES_BILAN.filter((e) => !e.hasNote).map((e) => e.label)
+    const headers = [
+      "Dossier", "Collaborateur", "Assistant", "Clôture", "Date limite",
+      "Avancement %", "CA (€)", "Résultat (€)", "Nb écritures",
+      "Commentaire bilan", ...etapeLabels,
+    ]
+    const rows = dossiers.map((d) => {
+      const clickableStatuts = ETAPES_BILAN.filter((e) => !e.hasNote).map((_, i) => {
+        const absIdx = ETAPES_BILAN.map((e, idx) => ({ idx, hasNote: e.hasNote })).filter((e) => !e.hasNote)[i]?.idx
+        const val = absIdx !== undefined ? d.etapeStatuts[absIdx] : null
+        return val ?? ""
+      })
+      return [
+        d.raisonSociale,
+        d.collaborateurPrincipal?.prenom ?? "",
+        d.firstAssistant?.prenom ?? "",
+        d.dateClotureExercice ? new Date(d.dateClotureExercice).toLocaleDateString("fr-FR") : "",
+        d.datePrevueArreteBilan ? new Date(d.datePrevueArreteBilan).toLocaleDateString("fr-FR") : "",
+        d.avancement,
+        d.fec?.chiffreAffaires ?? "",
+        d.fec?.resultat ?? "",
+        d.fec?.nbLignes ?? "",
+        d.commentaireBilan ?? "",
+        ...clickableStatuts,
+      ]
+    })
+    downloadCSV(`dossiers-bilan-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows)
+  }, [dossiers])
+
   return (
     <>
+      {/* Export button */}
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Exporter CSV
+        </button>
+      </div>
+
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="mb-2 rounded border border-blue-200 bg-blue-50 px-3 py-2">
@@ -716,9 +760,9 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
                 <div className="flex gap-2">
-                  {(["RAS", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const).map((s) => {
-                    const conf = { RAS: "bg-green-100 text-green-800", DEMANDE_CLIENT: "bg-orange-100 text-orange-800", ACTION_REQUISE: "bg-red-100 text-red-800" }
-                    const labels = { RAS: "RAS", DEMANDE_CLIENT: "Demande client", ACTION_REQUISE: "Action requise" }
+                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => {
+                    const conf: Record<string, string> = { RAS: "bg-green-100 text-green-800", ACTION_CABINET: "bg-red-100 text-red-800", ACTION_CLIENT: "bg-orange-100 text-orange-800" }
+                    const labels: Record<string, string> = { RAS: "RAS", ACTION_CABINET: "Action cabinet", ACTION_CLIENT: "Action client" }
                     return (
                       <button
                         key={s}
@@ -735,6 +779,12 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
                     )
                   })}
                 </div>
+                {exchangeForm.statut === "ACTION_CABINET" && (
+                  <p className="mt-1.5 text-[11px] text-red-600">Le cabinet doit agir — apparaitra dans les alertes</p>
+                )}
+                {exchangeForm.statut === "ACTION_CLIENT" && (
+                  <p className="mt-1.5 text-[11px] text-orange-600">Le client doit agir — apparaitra dans les alertes</p>
+                )}
               </div>
 
               {/* Prochain contact */}
