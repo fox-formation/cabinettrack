@@ -233,3 +233,29 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json(suivi)
 }
+
+/**
+ * DELETE /api/suivi-revision
+ * Delete an existing entry.
+ * Body: { id }
+ */
+export async function DELETE(req: NextRequest) {
+  const tenantId = await getTenantId()
+  const body = await req.json()
+  const { id } = body
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 })
+  }
+
+  const existing = await prisma.suiviRevision.findFirst({
+    where: { id, tenantId },
+  })
+  if (!existing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  await prisma.suiviRevision.delete({ where: { id } })
+
+  return NextResponse.json({ ok: true })
+}

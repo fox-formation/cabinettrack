@@ -98,6 +98,15 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
   const [cloreReponse, setCloreReponse] = useState("")
   const [cloreSaving, setCloreSaving] = useState(false)
 
+  // Edit modal state
+  const [editEntry, setEditEntry] = useState<SuiviRevisionEntry | null>(null)
+  const [editForm, setEditForm] = useState({ dateContact: "", sens: "SORTANT" as "SORTANT" | "ENTRANT", sujet: "", resume: "", statut: "RAS" as string, prochainContact: "" })
+  const [editSaving, setEditSaving] = useState(false)
+
+  // Delete confirmation
+  const [deleteConfirm, setDeleteConfirm] = useState<{ entryId: string; dossierId: string; sujet: string | null } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   // Panel state (historique)
   const [panelDossierId, setPanelDossierId] = useState<string | null>(null)
 
@@ -264,6 +273,64 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     setCloreSaving(false)
     setCloreModal(null)
   }, [cloreModal, cloreReponse])
+
+  // Open edit modal for an entry
+  const openEditModal = useCallback((entry: SuiviRevisionEntry) => {
+    setEditEntry(entry)
+    setEditForm({
+      dateContact: entry.dateContact.slice(0, 10),
+      sens: entry.sens,
+      sujet: entry.sujet || "",
+      resume: entry.resume || "",
+      statut: entry.statut,
+      prochainContact: entry.prochainContact?.slice(0, 10) || "",
+    })
+  }, [])
+
+  const submitEdit = useCallback(async () => {
+    if (!editEntry) return
+    setEditSaving(true)
+    const res = await fetch("/api/suivi-revision", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editEntry.id,
+        dateContact: editForm.dateContact,
+        sens: editForm.sens,
+        sujet: editForm.sujet || null,
+        resume: editForm.resume || null,
+        statut: editForm.statut,
+        prochainContact: editForm.prochainContact || null,
+      }),
+    })
+    if (res.ok) {
+      setEditEntry(null)
+      await fetchSuivis()
+    }
+    setEditSaving(false)
+  }, [editEntry, editForm, fetchSuivis])
+
+  // Delete an entry
+  const submitDelete = useCallback(async () => {
+    if (!deleteConfirm) return
+    setDeleting(true)
+    await fetch("/api/suivi-revision", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: deleteConfirm.entryId }),
+    })
+    // Remove from local state
+    setSuiviParDossier((prev) => {
+      const next = { ...prev }
+      const entries = next[deleteConfirm.dossierId]
+      if (entries) {
+        next[deleteConfirm.dossierId] = entries.filter((e) => e.id !== deleteConfirm.entryId)
+      }
+      return next
+    })
+    setDeleting(false)
+    setDeleteConfirm(null)
+  }, [deleteConfirm])
 
   // Sorted dossiers: action requise first, then retard, then rest
   const sortedDossiers = useMemo(() => {
@@ -826,10 +893,113 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                           )}
                         </div>
                       )}
+                      {/* Edit / Delete */}
+                      <div className="mt-3 flex items-center gap-2 border-t border-gray-100 pt-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEditModal(entry) }}
+                          className="text-[10px] font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          Modifier
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ entryId: entry.id, dossierId: entry.dossierId, sujet: entry.sujet }) }}
+                          className="text-[10px] font-medium text-red-500 hover:text-red-700 hover:underline"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal: Modifier un contact */}
+      {editEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Modifier le contact</h3>
+              <button onClick={() => setEditEntry(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Date du contact</label>
+                  <input type="date" value={editForm.dateContact} onChange={(e) => setEditForm({ ...editForm, dateContact: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Sens</label>
+                  <div className="flex gap-2">
+                    {(["SORTANT", "ENTRANT"] as const).map((s) => (
+                      <button key={s} type="button" onClick={() => setEditForm({ ...editForm, sens: s })} className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${editForm.sens === s ? (s === "SORTANT" ? "bg-blue-100 text-blue-800 ring-2 ring-blue-300" : "bg-green-100 text-green-800 ring-2 ring-green-300") : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                        {s === "SORTANT" ? "↗ Sortant" : "↙ Entrant"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sujet</label>
+                <input type="text" value={editForm.sujet} onChange={(e) => setEditForm({ ...editForm, sujet: e.target.value })} placeholder="Ex: Demande de documents..." className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Résumé</label>
+                <textarea value={editForm.resume} onChange={(e) => setEditForm({ ...editForm, resume: e.target.value })} rows={3} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
+                <div className="flex gap-2">
+                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => (
+                    <button key={s} type="button" onClick={() => setEditForm({ ...editForm, statut: s })} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${editForm.statut === s ? `${STATUT_CONFIG[s].bg} ${STATUT_CONFIG[s].text} ring-2 ring-offset-1 ring-gray-300` : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                      {STATUT_CONFIG[s].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Prochain contact</label>
+                <input type="date" value={editForm.prochainContact} onChange={(e) => setEditForm({ ...editForm, prochainContact: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setEditEntry(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button onClick={submitEdit} disabled={editSaving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                {editSaving ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmation suppression */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+                <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Supprimer ce contact ?</h3>
+            </div>
+            {deleteConfirm.sujet && (
+              <p className="mb-3 ml-[52px] text-sm text-gray-500">{deleteConfirm.sujet}</p>
+            )}
+            <p className="ml-[52px] text-sm text-gray-500">Cette action est irréversible.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button onClick={submitDelete} disabled={deleting} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                {deleting ? "Suppression..." : "Supprimer"}
+              </button>
             </div>
           </div>
         </div>

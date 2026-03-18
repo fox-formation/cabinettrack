@@ -97,6 +97,15 @@ export default function AlertesPage() {
   const [cloreReponse, setCloreReponse] = useState("")
   const [cloreSaving, setCloreSaving] = useState(false)
 
+  // Edit modal
+  const [editAction, setEditAction] = useState<ActionOuverte | null>(null)
+  const [editForm, setEditForm] = useState({ dateContact: "", sens: "SORTANT" as string, sujet: "", resume: "", statut: "RAS" as string, prochainContact: "" })
+  const [editSaving, setEditSaving] = useState(false)
+
+  // Delete confirmation
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; sujet: string | null } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -211,6 +220,55 @@ export default function AlertesPage() {
     setCloreSaving(false)
     setCloreModal(null)
   }, [cloreModal, cloreReponse])
+
+  // Open edit
+  const openEdit = useCallback((action: ActionOuverte) => {
+    setEditAction(action)
+    setEditForm({
+      dateContact: action.dateContact.slice(0, 10),
+      sens: action.sens,
+      sujet: action.sujet || "",
+      resume: action.resume || "",
+      statut: action.statut,
+      prochainContact: "",
+    })
+  }, [])
+
+  const submitEdit = useCallback(async () => {
+    if (!editAction) return
+    setEditSaving(true)
+    const res = await fetch("/api/suivi-revision", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editAction.id,
+        dateContact: editForm.dateContact,
+        sens: editForm.sens,
+        sujet: editForm.sujet || null,
+        resume: editForm.resume || null,
+        statut: editForm.statut,
+        prochainContact: editForm.prochainContact || null,
+      }),
+    })
+    if (res.ok) {
+      setEditAction(null)
+      await fetchData()
+    }
+    setEditSaving(false)
+  }, [editAction, editForm, fetchData])
+
+  const submitDelete = useCallback(async () => {
+    if (!deleteConfirm) return
+    setDeleting(true)
+    await fetch("/api/suivi-revision", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: deleteConfirm.id }),
+    })
+    setActions((prev) => prev.filter((a) => a.id !== deleteConfirm.id))
+    setDeleting(false)
+    setDeleteConfirm(null)
+  }, [deleteConfirm])
 
   // ── Render ──
 
@@ -367,13 +425,27 @@ export default function AlertesPage() {
                               {jours > 0 ? `${jours} jour${jours > 1 ? "s" : ""}` : "Aujourd\u2019hui"}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-center">
-                            <button
-                              onClick={() => openClore(a)}
-                              className="rounded bg-green-100 px-2.5 py-1 text-[10px] font-medium text-green-700 transition-colors hover:bg-green-200"
-                            >
-                              Clore
-                            </button>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openClore(a)}
+                                className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 transition-colors hover:bg-green-200"
+                              >
+                                Clore
+                              </button>
+                              <button
+                                onClick={() => openEdit(a)}
+                                className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-200"
+                              >
+                                Modifier
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm({ id: a.id, sujet: a.sujet })}
+                                className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-600 transition-colors hover:bg-red-200"
+                              >
+                                Suppr.
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -533,6 +605,93 @@ export default function AlertesPage() {
                 className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
               >
                 {cloreSaving ? "Enregistrement..." : "Clore l\u2019action"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Modifier un contact */}
+      {editAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Modifier le contact</h3>
+              <button onClick={() => setEditAction(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <p className="mb-4 text-sm text-gray-500">{editAction.dossier.raisonSociale}</p>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Date du contact</label>
+                  <input type="date" value={editForm.dateContact} onChange={(e) => setEditForm({ ...editForm, dateContact: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Sens</label>
+                  <div className="flex gap-2">
+                    {(["SORTANT", "ENTRANT"] as const).map((s) => (
+                      <button key={s} type="button" onClick={() => setEditForm({ ...editForm, sens: s })} className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${editForm.sens === s ? (s === "SORTANT" ? "bg-blue-100 text-blue-800 ring-2 ring-blue-300" : "bg-green-100 text-green-800 ring-2 ring-green-300") : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                        {s === "SORTANT" ? "\u2197 Sortant" : "\u2199 Entrant"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sujet</label>
+                <input type="text" value={editForm.sujet} onChange={(e) => setEditForm({ ...editForm, sujet: e.target.value })} placeholder="Ex: Demande de documents..." className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Résumé</label>
+                <textarea value={editForm.resume} onChange={(e) => setEditForm({ ...editForm, resume: e.target.value })} rows={3} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
+                <div className="flex gap-2">
+                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => {
+                    const conf = ACTION_LABELS[s] || { label: s, bg: "bg-gray-100", text: "text-gray-600" }
+                    return (
+                      <button key={s} type="button" onClick={() => setEditForm({ ...editForm, statut: s })} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${editForm.statut === s ? `${conf.bg} ${conf.text} ring-2 ring-offset-1 ring-gray-300` : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                        {s === "RAS" ? "RAS" : conf.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setEditAction(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button onClick={submitEdit} disabled={editSaving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                {editSaving ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmation suppression */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+                <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Supprimer ce contact ?</h3>
+            </div>
+            {deleteConfirm.sujet && (
+              <p className="mb-3 ml-[52px] text-sm text-gray-500">{deleteConfirm.sujet}</p>
+            )}
+            <p className="ml-[52px] text-sm text-gray-500">Cette action est irréversible.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button onClick={submitDelete} disabled={deleting} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                {deleting ? "Suppression..." : "Supprimer"}
               </button>
             </div>
           </div>
