@@ -38,16 +38,16 @@ interface EcheanceRetard {
   dossier: EcheanceDossier
 }
 
-// ── Config ─────────────────────────────────────────────
-
-const ACTION_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  REPONSE_A_APPORTER: { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
-  // Legacy
-  ACTION_CABINET:     { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
-  ACTION_CLIENT:      { label: "Réponse à apporter", bg: "bg-orange-100", text: "text-orange-700" },
-  ACTION_REQUISE:     { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
-  DEMANDE_CLIENT:     { label: "Réponse à apporter", bg: "bg-orange-100", text: "text-orange-700" },
+interface DossierRetard {
+  id: string
+  raisonSociale: string
+  datePrevueArreteBilan: string
+  dateClotureExercice: string | null
+  collaborateurPrincipal: { id: string; prenom: string } | null
+  cabinet: { nom: string }
 }
+
+// ── Config ─────────────────────────────────────────────
 
 const SENS_LABELS: Record<string, { label: string; icon: string; bg: string; text: string }> = {
   SORTANT: { label: "Sortant", icon: "\u2197", bg: "bg-blue-100", text: "text-blue-700" },
@@ -90,8 +90,10 @@ function formatDate(iso: string): string {
 export default function AlertesPage() {
   const [echeances, setEcheances] = useState<EcheanceRetard[]>([])
   const [actions, setActions] = useState<ActionOuverte[]>([])
+  const [dossiersRetard, setDossiersRetard] = useState<DossierRetard[]>([])
   const [loading, setLoading] = useState(true)
   const [filtreType, setFiltreType] = useState<string>("")
+  const [filtreCollab, setFiltreCollab] = useState<string>("")
   const [filtreRetardOnly, setFiltreRetardOnly] = useState(false)
 
   // Clore modal
@@ -111,46 +113,97 @@ export default function AlertesPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [echRes, actRes] = await Promise.all([
+      const [echRes, actRes, retardRes] = await Promise.all([
         fetch("/api/echeances/retards"),
         fetch("/api/suivi-revision/actions-ouvertes"),
+        fetch("/api/alertes/dossiers-retard"),
       ])
       if (echRes.ok) setEcheances(await echRes.json())
       if (actRes.ok) setActions(await actRes.json())
+      if (retardRes.ok) setDossiersRetard(await retardRes.json())
     } catch { /* empty */ }
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Stats ──
+  // ── Extract unique collaborateurs for filter ──
 
-  const stats = useMemo(() => {
-    const echRetard = echeances.filter((e) => calcJoursRetard(e.dateEcheance) > 0).length
-    const echAVenir7j = echeances.filter((e) => { const j = calcJoursRetard(e.dateEcheance); return j <= 0 && j >= -7 }).length
-    return {
-      echTotal: echeances.length,
-      echRetard,
-      echAVenir7j,
-      contacts: actions.length,
-      total: echeances.length + actions.length,
+  const collaborateurs = useMemo(() => {
+    const set = new Map<string, string>()
+    for (const e of echeances) {
+      const c = e.dossier.collaborateurPrincipal
+      if (c) set.set(c.prenom, c.prenom)
     }
-  }, [echeances, actions])
+    for (const a of actions) {
+      const c = a.collaborateur?.user?.prenom ?? a.dossier.collaborateurPrincipal?.prenom
+      if (c) set.set(c, c)
+    }
+    for (const d of dossiersRetard) {
+      const c = d.collaborateurPrincipal
+      if (c) set.set(c.prenom, c.prenom)
+    }
+    return Array.from(set.values()).sort()
+  }, [echeances, actions, dossiersRetard])
 
-  // ── Show contacts view? ──
+  // ── Helper: get collab name from various item types ──
 
+  function getCollabEcheance(e: EcheanceRetard): string {
+    return e.dossier.collaborateurPrincipal?.prenom ?? "—"
+  }
+  function getCollabAction(a: ActionOuverte): string {
+    return a.collaborateur?.user?.prenom ?? a.dossier.collaborateurPrincipal?.prenom ?? "—"
+  }
+  function getCollabDossier(d: DossierRetard): string {
+    return d.collaborateurPrincipal?.prenom ?? "—"
+  }
+
+  // ── Which sections to show ──
+
+  const showRetardBilan = filtreType === "" || filtreType === "RETARD_BILAN"
   const showContacts = filtreType === "" || filtreType === "CONTACT"
-  const showEcheances = filtreType === "" || filtreType !== "CONTACT"
+  const showEcheances = filtreType === "" || (filtreType !== "CONTACT" && filtreType !== "RETARD_BILAN")
 
-  // ── Filtered échéances for the grid ──
+  // ── Filtered data ──
+
+  const filteredDossiersRetard = useMemo(() => {
+    return dossiersRetard.filter((d) => {
+      if (filtreCollab && getCollabDossier(d) !== filtreCollab) return false
+      return true
+    })
+  }, [dossiersRetard, filtreCollab])
+
+  const filteredActions = useMemo(() => {
+    return actions.filter((a) => {
+      if (filtreCollab && getCollabAction(a) !== filtreCollab) return false
+      return true
+    }).sort((a, b) => calcJoursRetard(b.dateContact) - calcJoursRetard(a.dateContact))
+  }, [actions, filtreCollab])
 
   const filteredEcheances = useMemo(() => {
     return echeances.filter((e) => {
-      if (filtreType && filtreType !== "CONTACT" && e.type !== filtreType) return false
+      if (filtreType && filtreType !== "CONTACT" && filtreType !== "RETARD_BILAN" && e.type !== filtreType) return false
+      if (filtreCollab && getCollabEcheance(e) !== filtreCollab) return false
       if (filtreRetardOnly && calcJoursRetard(e.dateEcheance) < 0) return false
       return true
     })
-  }, [echeances, filtreType, filtreRetardOnly])
+  }, [echeances, filtreType, filtreCollab, filtreRetardOnly])
+
+  // ── Stats ──
+
+  const stats = useMemo(() => {
+    const echRetard = filteredEcheances.filter((e) => calcJoursRetard(e.dateEcheance) > 0).length
+    const echAVenir7j = filteredEcheances.filter((e) => { const j = calcJoursRetard(e.dateEcheance); return j <= 0 && j >= -7 }).length
+    return {
+      echTotal: filteredEcheances.length,
+      echRetard,
+      echAVenir7j,
+      contacts: filteredActions.length,
+      bilanRetard: filteredDossiersRetard.length,
+    }
+  }, [filteredEcheances, filteredActions, filteredDossiersRetard])
+
+  const totalAlertes = stats.bilanRetard + stats.contacts + stats.echTotal
 
   // ── Build dossier rows for échéances grid ──
 
@@ -171,7 +224,7 @@ export default function AlertesPage() {
         dossierMap.set(key, {
           dossierId: ech.dossier.id,
           raisonSociale: ech.dossier.raisonSociale,
-          collaborateur: ech.dossier.collaborateurPrincipal?.prenom ?? "—",
+          collaborateur: getCollabEcheance(ech),
           cabinet: ech.dossier.cabinet.nom,
           echeances: new Map(),
           maxRetard: 0,
@@ -186,12 +239,6 @@ export default function AlertesPage() {
     }
     return Array.from(dossierMap.values()).sort((a, b) => b.maxRetard - a.maxRetard)
   }, [filteredEcheances])
-
-  // ── Sorted contacts ──
-
-  const sortedActions = useMemo(() => {
-    return [...actions].sort((a, b) => calcJoursRetard(b.dateContact) - calcJoursRetard(a.dateContact))
-  }, [actions])
 
   // ── Handlers ──
 
@@ -217,13 +264,12 @@ export default function AlertesPage() {
     await fetch("/api/suivi-revision", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: cloreModal.id, dateReponse: today, reponse: cloreReponse || null }),
+      body: JSON.stringify({ id: cloreModal.id, statut: "REPONSE_APPORTEE", dateReponse: today, reponse: cloreReponse || null }),
     })
     setCloreSaving(false)
     setCloreModal(null)
   }, [cloreModal, cloreReponse])
 
-  // Open edit
   const openEdit = useCallback((action: ActionOuverte) => {
     setEditAction(action)
     setEditForm({
@@ -274,39 +320,38 @@ export default function AlertesPage() {
 
   // ── Render ──
 
-  const totalFiltered = (showEcheances && filtreType !== "CONTACT" ? filteredEcheances.length : 0)
-    + (showContacts ? actions.length : 0)
+  const hasFilters = filtreType !== "" || filtreCollab !== "" || filtreRetardOnly
 
   return (
     <main className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Alertes — Retards et Échéances</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {stats.echRetard} en retard · {stats.echAVenir7j} à venir (7j) · {stats.contacts} contact{stats.contacts > 1 ? "s" : ""} en attente
+          {stats.bilanRetard} bilan{stats.bilanRetard > 1 ? "s" : ""} en retard · {stats.echRetard} échéance{stats.echRetard > 1 ? "s" : ""} dépassée{stats.echRetard > 1 ? "s" : ""} · {stats.contacts} contact{stats.contacts > 1 ? "s" : ""} en attente
         </p>
       </div>
 
       {/* Stats cards */}
       <div className="mb-6 grid grid-cols-5 gap-3">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-          <p className="text-xs font-medium text-red-600">En retard</p>
-          <p className="mt-1 text-2xl font-bold text-red-700">{stats.echRetard}</p>
-        </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-medium text-amber-600">À venir (7j)</p>
+        <button onClick={() => setFiltreType("RETARD_BILAN")} className={`rounded-xl border p-4 text-left transition-colors ${filtreType === "RETARD_BILAN" ? "border-red-400 bg-red-100 ring-2 ring-red-300" : "border-red-200 bg-red-50 hover:bg-red-100"}`}>
+          <p className="text-xs font-medium text-red-600">Bilans en retard</p>
+          <p className="mt-1 text-2xl font-bold text-red-700">{stats.bilanRetard}</p>
+        </button>
+        <button onClick={() => setFiltreType("")} className={`rounded-xl border p-4 text-left transition-colors ${filtreType === "" ? "border-gray-400 bg-gray-100 ring-2 ring-gray-300" : "border-amber-200 bg-amber-50 hover:bg-amber-100"}`}>
+          <p className="text-xs font-medium text-amber-600">Échéances &lt; 7j</p>
           <p className="mt-1 text-2xl font-bold text-amber-700">{stats.echAVenir7j}</p>
-        </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+        </button>
+        <button onClick={() => { setFiltreType(""); setFiltreRetardOnly(true) }} className={`rounded-xl border p-4 text-left transition-colors border-blue-200 bg-blue-50 hover:bg-blue-100`}>
           <p className="text-xs font-medium text-blue-600">Échéances ouvertes</p>
           <p className="mt-1 text-2xl font-bold text-blue-700">{stats.echTotal}</p>
-        </div>
-        <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+        </button>
+        <button onClick={() => setFiltreType("CONTACT")} className={`rounded-xl border p-4 text-left transition-colors ${filtreType === "CONTACT" ? "border-purple-400 bg-purple-100 ring-2 ring-purple-300" : "border-purple-200 bg-purple-50 hover:bg-purple-100"}`}>
           <p className="text-xs font-medium text-purple-600">Contacts en attente</p>
           <p className="mt-1 text-2xl font-bold text-purple-700">{stats.contacts}</p>
-        </div>
+        </button>
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium text-gray-500">Total alertes</p>
-          <p className="mt-1 text-2xl font-bold text-gray-800">{stats.total}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-800">{totalAlertes}</p>
         </div>
       </div>
 
@@ -318,10 +363,22 @@ export default function AlertesPage() {
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
         >
           <option value="">Tous les types</option>
+          <option value="RETARD_BILAN">Bilans en retard</option>
           <option value="FISCALE">Fiscale</option>
           <option value="SOCIALE">Sociale</option>
           <option value="JURIDIQUE">Juridique</option>
           <option value="CONTACT">Contact client</option>
+        </select>
+
+        <select
+          value={filtreCollab}
+          onChange={(e) => setFiltreCollab(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+        >
+          <option value="">Tous les collaborateurs</option>
+          {collaborateurs.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
         </select>
 
         <label className="flex items-center gap-2 text-sm text-gray-600">
@@ -334,9 +391,9 @@ export default function AlertesPage() {
           Retards uniquement
         </label>
 
-        {(filtreType || filtreRetardOnly) && (
+        {hasFilters && (
           <button
-            onClick={() => { setFiltreType(""); setFiltreRetardOnly(false) }}
+            onClick={() => { setFiltreType(""); setFiltreCollab(""); setFiltreRetardOnly(false) }}
             className="text-sm text-gray-500 underline hover:text-gray-700"
           >
             Réinitialiser
@@ -344,7 +401,7 @@ export default function AlertesPage() {
         )}
 
         <span className="ml-auto text-xs text-gray-400">
-          {totalFiltered} alerte{totalFiltered > 1 ? "s" : ""} affichée{totalFiltered > 1 ? "s" : ""}
+          {totalAlertes} alerte{totalAlertes > 1 ? "s" : ""} affichée{totalAlertes > 1 ? "s" : ""}
         </span>
       </div>
 
@@ -355,11 +412,63 @@ export default function AlertesPage() {
       ) : (
         <div className="space-y-6">
 
-          {/* ── Section Contacts en attente ── */}
-          {showContacts && actions.length > 0 && (
+          {/* ── Section Bilans en retard ── */}
+          {showRetardBilan && filteredDossiersRetard.length > 0 && (
             <div>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-100 text-[10px] font-bold text-purple-700">{actions.length}</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-700">{filteredDossiersRetard.length}</span>
+                Bilans en retard — date limite dépassée
+              </h2>
+              <div className="overflow-hidden rounded-xl border border-red-200 bg-white shadow-sm">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-red-100 bg-red-50/50 text-left text-[10px] font-medium uppercase tracking-wide text-red-500">
+                    <tr>
+                      <th className="px-4 py-2.5">Dossier</th>
+                      <th className="px-3 py-2.5">Collab.</th>
+                      <th className="px-3 py-2.5">Clôture</th>
+                      <th className="px-3 py-2.5">Date limite</th>
+                      <th className="px-3 py-2.5">Retard</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredDossiersRetard.map((d) => {
+                      const jours = calcJoursRetard(d.datePrevueArreteBilan)
+                      return (
+                        <tr key={d.id} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5">
+                            <Link href={`/dossiers/${d.id}`} className="font-medium text-gray-800 hover:text-blue-600 hover:underline">
+                              {d.raisonSociale}
+                            </Link>
+                            <div className="text-[9px] text-gray-400">{d.cabinet.nom}</div>
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-500">{getCollabDossier(d)}</td>
+                          <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
+                            {d.dateClotureExercice ? formatDate(d.dateClotureExercice) : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
+                            {formatDate(d.datePrevueArreteBilan)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[10px] font-semibold ${
+                              jours > 30 ? "text-red-700" : jours > 14 ? "text-red-600" : "text-amber-600"
+                            }`}>
+                              J+{jours}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Section Contacts en attente ── */}
+          {showContacts && filteredActions.length > 0 && (
+            <div>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-100 text-[10px] font-bold text-purple-700">{filteredActions.length}</span>
                 Contacts en attente de réponse
               </h2>
               <div className="overflow-hidden rounded-xl border border-purple-200 bg-white shadow-sm">
@@ -368,7 +477,6 @@ export default function AlertesPage() {
                     <tr>
                       <th className="px-4 py-2.5">Dossier</th>
                       <th className="px-3 py-2.5">Collab.</th>
-                      <th className="px-3 py-2.5">Type</th>
                       <th className="px-3 py-2.5">Sens</th>
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">Sujet</th>
@@ -378,9 +486,8 @@ export default function AlertesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {sortedActions.map((a) => {
+                    {filteredActions.map((a) => {
                       const jours = calcJoursRetard(a.dateContact)
-                      const typeConf = ACTION_LABELS[a.statut] || ACTION_LABELS.ACTION_CABINET
                       const sensConf = SENS_LABELS[a.sens] || SENS_LABELS.SORTANT
                       return (
                         <tr key={a.id} className="hover:bg-gray-50/60">
@@ -390,14 +497,7 @@ export default function AlertesPage() {
                             </Link>
                             <div className="text-[9px] text-gray-400">{a.dossier.cabinet.nom}</div>
                           </td>
-                          <td className="px-3 py-2.5 text-gray-500">
-                            {a.collaborateur?.user?.prenom ?? a.dossier.collaborateurPrincipal?.prenom ?? "—"}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${typeConf.bg} ${typeConf.text}`}>
-                              {typeConf.label}
-                            </span>
-                          </td>
+                          <td className="px-3 py-2.5 text-gray-500">{getCollabAction(a)}</td>
                           <td className="px-3 py-2.5">
                             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${sensConf.bg} ${sensConf.text}`}>
                               {sensConf.icon} {sensConf.label}
@@ -458,8 +558,8 @@ export default function AlertesPage() {
             </div>
           )}
 
-          {/* ── Section Échéances ── */}
-          {showEcheances && filtreType !== "CONTACT" && (
+          {/* ── Section Échéances fiscales / sociales / juridiques ── */}
+          {showEcheances && filtreType !== "CONTACT" && filtreType !== "RETARD_BILAN" && (
             <div>
               {filtreType === "" && (
                 <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -471,7 +571,7 @@ export default function AlertesPage() {
                 <div className="rounded-xl bg-white p-12 text-center shadow-sm">
                   <p className="text-lg font-medium text-gray-400">Aucune échéance en attente</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    {filtreType || filtreRetardOnly ? "Aucun résultat avec ces filtres" : "Tous les dossiers sont à jour"}
+                    {hasFilters ? "Aucun résultat avec ces filtres" : "Tous les dossiers sont à jour"}
                   </p>
                 </div>
               ) : (
@@ -550,11 +650,17 @@ export default function AlertesPage() {
             </div>
           )}
 
-          {/* Empty state when filtering contacts only and none exist */}
-          {filtreType === "CONTACT" && actions.length === 0 && (
+          {/* Empty states */}
+          {filtreType === "CONTACT" && filteredActions.length === 0 && (
             <div className="rounded-xl bg-white p-12 text-center shadow-sm">
               <p className="text-lg font-medium text-gray-400">Aucun contact en attente</p>
               <p className="mt-1 text-sm text-gray-400">Toutes les actions ont été clôturées</p>
+            </div>
+          )}
+          {filtreType === "RETARD_BILAN" && filteredDossiersRetard.length === 0 && (
+            <div className="rounded-xl bg-white p-12 text-center shadow-sm">
+              <p className="text-lg font-medium text-gray-400">Aucun bilan en retard</p>
+              <p className="mt-1 text-sm text-gray-400">Tous les bilans sont dans les temps</p>
             </div>
           )}
         </div>
@@ -569,7 +675,6 @@ export default function AlertesPage() {
               <button onClick={() => setCloreModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
 
-            {/* Recap */}
             {(cloreModal.sujet || cloreModal.resume) && (
               <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                 {cloreModal.sujet && (
