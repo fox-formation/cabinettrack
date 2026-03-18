@@ -4,7 +4,7 @@ import { getTenantId } from "@/lib/tenant"
 
 export const dynamic = "force-dynamic"
 
-const STATUTS_VALIDES = ["RAS", "ACTION_CABINET", "ACTION_CLIENT", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const
+const STATUTS_VALIDES = ["RAS", "REPONSE_APPORTEE", "REPONSE_A_APPORTER", "ACTION_CABINET", "ACTION_CLIENT", "DEMANDE_CLIENT", "ACTION_REQUISE"] as const
 
 /**
  * GET /api/suivi-revision?dossierId=xxx

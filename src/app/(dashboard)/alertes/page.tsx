@@ -41,10 +41,12 @@ interface EcheanceRetard {
 // ── Config ─────────────────────────────────────────────
 
 const ACTION_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  ACTION_CABINET: { label: "Action cabinet", bg: "bg-red-100", text: "text-red-700" },
-  ACTION_CLIENT:  { label: "Action client",  bg: "bg-orange-100", text: "text-orange-700" },
-  ACTION_REQUISE: { label: "Action cabinet", bg: "bg-red-100", text: "text-red-700" },
-  DEMANDE_CLIENT: { label: "Action client",  bg: "bg-orange-100", text: "text-orange-700" },
+  REPONSE_A_APPORTER: { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
+  // Legacy
+  ACTION_CABINET:     { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
+  ACTION_CLIENT:      { label: "Réponse à apporter", bg: "bg-orange-100", text: "text-orange-700" },
+  ACTION_REQUISE:     { label: "Réponse à apporter", bg: "bg-red-100",    text: "text-red-700" },
+  DEMANDE_CLIENT:     { label: "Réponse à apporter", bg: "bg-orange-100", text: "text-orange-700" },
 }
 
 const SENS_LABELS: Record<string, { label: string; icon: string; bg: string; text: string }> = {
@@ -652,11 +654,16 @@ export default function AlertesPage() {
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
                 <div className="flex gap-2">
-                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => {
-                    const conf = ACTION_LABELS[s] || { label: s, bg: "bg-gray-100", text: "text-gray-600" }
+                  {(["RAS", "REPONSE_APPORTEE", "REPONSE_A_APPORTER"] as const).map((s) => {
+                    const confs: Record<string, { label: string; bg: string; text: string }> = {
+                      RAS: { label: "RAS", bg: "bg-gray-100", text: "text-gray-700" },
+                      REPONSE_APPORTEE: { label: "Réponse apportée", bg: "bg-green-100", text: "text-green-800" },
+                      REPONSE_A_APPORTER: { label: "Réponse à apporter", bg: "bg-red-100", text: "text-red-800" },
+                    }
+                    const conf = confs[s]
                     return (
                       <button key={s} type="button" onClick={() => setEditForm({ ...editForm, statut: s })} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${editForm.statut === s ? `${conf.bg} ${conf.text} ring-2 ring-offset-1 ring-gray-300` : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
-                        {s === "RAS" ? "RAS" : conf.label}
+                        {conf.label}
                       </button>
                     )
                   })}

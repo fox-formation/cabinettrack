@@ -32,7 +32,7 @@ export default async function DashboardLayout({
       prisma.suiviRevision.count({
         where: {
           tenantId,
-          statut: { in: ["ACTION_CABINET", "ACTION_CLIENT", "ACTION_REQUISE", "DEMANDE_CLIENT"] },
+          statut: { in: ["REPONSE_A_APPORTER", "ACTION_CABINET", "ACTION_CLIENT", "ACTION_REQUISE", "DEMANDE_CLIENT"] },
           dateReponse: null,
         },
       }),

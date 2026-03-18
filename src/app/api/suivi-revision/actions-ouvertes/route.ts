@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic"
 
 /**
  * GET /api/suivi-revision/actions-ouvertes
- * Returns all SuiviRevision entries with an actionable statut and no dateReponse.
- * Includes: ACTION_CABINET, ACTION_CLIENT, ACTION_REQUISE (legacy), DEMANDE_CLIENT (legacy)
+ * Returns all SuiviRevision entries needing a response (no dateReponse).
+ * REPONSE_A_APPORTER = new statut
+ * ACTION_CABINET, ACTION_CLIENT, ACTION_REQUISE, DEMANDE_CLIENT = legacy
  */
 export async function GET() {
   const tenantId = await getTenantId()
@@ -15,7 +16,7 @@ export async function GET() {
   const actions = await prisma.suiviRevision.findMany({
     where: {
       tenantId,
-      statut: { in: ["ACTION_CABINET", "ACTION_CLIENT", "ACTION_REQUISE", "DEMANDE_CLIENT"] },
+      statut: { in: ["REPONSE_A_APPORTER", "ACTION_CABINET", "ACTION_CLIENT", "ACTION_REQUISE", "DEMANDE_CLIENT"] },
       dateReponse: null,
     },
     include: {

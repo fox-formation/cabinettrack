@@ -185,11 +185,14 @@ enum SuiviEtape {
 }
 
 enum StatutRevision {
-  RAS                // Rien à faire — ne va pas dans les alertes
-  ACTION_CABINET     // Le cabinet doit agir (rappeler, préparer un doc, etc.)
-  ACTION_CLIENT      // Le client doit nous fournir qqch / revenir vers nous
-  DEMANDE_CLIENT     // Legacy — traité comme ACTION_CLIENT
-  ACTION_REQUISE     // Legacy — traité comme ACTION_CABINET
+  RAS                    // Simple note, pas d'action — ni alertes ni suivi
+  REPONSE_APPORTEE      // Réponse déjà donnée — historique uniquement
+  REPONSE_A_APPORTER    // Réponse à apporter — va dans les alertes
+  // Legacy (données existantes)
+  ACTION_CABINET
+  ACTION_CLIENT
+  DEMANDE_CLIENT
+  ACTION_REQUISE
 }
 
 enum SensContact {

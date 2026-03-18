@@ -31,12 +31,14 @@ interface Props {
 // ── Helpers ────────────────────────────────────────────
 
 const STATUT_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; alerte: boolean }> = {
-  RAS:              { label: "RAS",              bg: "bg-green-100",  text: "text-green-800",  dot: "bg-green-500",  alerte: false },
-  ACTION_CABINET:   { label: "Action cabinet",   bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
-  ACTION_CLIENT:    { label: "Action client",    bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
-  // Legacy statuts (backward compat with existing data)
-  DEMANDE_CLIENT:   { label: "Action client",    bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
-  ACTION_REQUISE:   { label: "Action cabinet",   bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
+  RAS:                 { label: "RAS",                 bg: "bg-gray-100",   text: "text-gray-700",   dot: "bg-gray-400",   alerte: false },
+  REPONSE_APPORTEE:    { label: "Réponse apportée",    bg: "bg-green-100",  text: "text-green-800",  dot: "bg-green-500",  alerte: false },
+  REPONSE_A_APPORTER:  { label: "Réponse à apporter",  bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
+  // Legacy
+  ACTION_CABINET:   { label: "Réponse à apporter",  bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
+  ACTION_CLIENT:    { label: "Réponse à apporter",  bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
+  DEMANDE_CLIENT:   { label: "Réponse à apporter",  bg: "bg-orange-100", text: "text-orange-800", dot: "bg-orange-500", alerte: true },
+  ACTION_REQUISE:   { label: "Réponse à apporter",  bg: "bg-red-100",    text: "text-red-800",    dot: "bg-red-500",    alerte: true },
 }
 
 function isActionnable(statut: string): boolean {
@@ -86,7 +88,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
     sens: "SORTANT" as "SORTANT" | "ENTRANT",
     sujet: "",
     resume: "",
-    statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
+    statut: "RAS" as "RAS" | "REPONSE_APPORTEE" | "REPONSE_A_APPORTER",
+    reponse: "",
     prochainContact: defaultProchainContact(),
   })
   const [saving, setSaving] = useState(false)
@@ -203,7 +206,8 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
       sens: "SORTANT",
       sujet: "",
       resume: "",
-      statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
+      statut: "RAS" as "RAS" | "REPONSE_APPORTEE" | "REPONSE_A_APPORTER",
+      reponse: "",
       prochainContact: defaultProchainContact(),
     })
     setAiSuggestion(null)
@@ -227,6 +231,9 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
           resume: modalForm.resume || null,
           statut: modalForm.statut,
           prochainContact: modalForm.prochainContact || null,
+          // Si réponse apportée, enregistrer la réponse et la date
+          reponse: modalForm.statut === "REPONSE_APPORTEE" ? (modalForm.reponse || null) : null,
+          dateReponse: modalForm.statut === "REPONSE_APPORTEE" ? modalForm.dateContact : null,
         }),
       })
       if (res.ok) {
@@ -680,7 +687,7 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                   Statut
                 </label>
                 <div className="flex gap-2">
-                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => (
+                  {(["RAS", "REPONSE_APPORTEE", "REPONSE_A_APPORTER"] as const).map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -695,13 +702,29 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
                     </button>
                   ))}
                 </div>
-                {modalForm.statut === "ACTION_CABINET" && (
-                  <p className="mt-1.5 text-[11px] text-red-600">Le cabinet doit agir (rappeler, préparer un doc...) — apparaitra dans les alertes</p>
+                {modalForm.statut === "REPONSE_A_APPORTER" && (
+                  <p className="mt-1.5 text-[11px] text-red-600">Apparaitra dans les alertes jusqu&apos;à ce que la réponse soit apportée</p>
                 )}
-                {modalForm.statut === "ACTION_CLIENT" && (
-                  <p className="mt-1.5 text-[11px] text-orange-600">Le client doit nous fournir qqch / revenir vers nous — apparaitra dans les alertes</p>
+                {modalForm.statut === "REPONSE_APPORTEE" && (
+                  <p className="mt-1.5 text-[11px] text-green-600">La réponse a déjà été donnée — sera enregistrée dans l&apos;historique</p>
                 )}
               </div>
+
+              {/* Réponse apportée (visible seulement si statut = REPONSE_APPORTEE) */}
+              {modalForm.statut === "REPONSE_APPORTEE" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Réponse apportée
+                  </label>
+                  <textarea
+                    value={modalForm.reponse}
+                    onChange={(e) => setModalForm({ ...modalForm, reponse: e.target.value })}
+                    rows={2}
+                    placeholder="Ex: Documents envoyés par mail, Réponse donnée par téléphone..."
+                    className="w-full rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  />
+                </div>
+              )}
 
               {/* Prochain contact */}
               <div>
@@ -957,7 +980,7 @@ export default function DossiersRevisionTable({ dossiers, collaborateurs }: Prop
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
                 <div className="flex gap-2">
-                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => (
+                  {(["RAS", "REPONSE_APPORTEE", "REPONSE_A_APPORTER"] as const).map((s) => (
                     <button key={s} type="button" onClick={() => setEditForm({ ...editForm, statut: s })} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${editForm.statut === s ? `${STATUT_CONFIG[s].bg} ${STATUT_CONFIG[s].text} ring-2 ring-offset-1 ring-gray-300` : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
                       {STATUT_CONFIG[s].label}
                     </button>

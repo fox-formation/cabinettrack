@@ -60,7 +60,8 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
     sens: "SORTANT" as "SORTANT" | "ENTRANT",
     sujet: "",
     resume: "",
-    statut: "RAS" as "RAS" | "ACTION_CABINET" | "ACTION_CLIENT",
+    statut: "RAS" as "RAS" | "REPONSE_APPORTEE" | "REPONSE_A_APPORTER",
+    reponse: "",
     prochainContact: "",
   })
   const [exchangeSaving, setExchangeSaving] = useState(false)
@@ -75,6 +76,7 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
       sujet: "",
       resume: "",
       statut: "RAS",
+      reponse: "",
       prochainContact: "",
     })
     setAiSuggestion(null)
@@ -119,6 +121,8 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
           resume: exchangeForm.resume || null,
           statut: exchangeForm.statut,
           prochainContact: exchangeForm.prochainContact || null,
+          reponse: exchangeForm.statut === "REPONSE_APPORTEE" ? (exchangeForm.reponse || null) : null,
+          dateReponse: exchangeForm.statut === "REPONSE_APPORTEE" ? exchangeForm.dateContact : null,
         }),
       })
       if (res.ok) {
@@ -760,9 +764,9 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Statut</label>
                 <div className="flex gap-2">
-                  {(["RAS", "ACTION_CABINET", "ACTION_CLIENT"] as const).map((s) => {
-                    const conf: Record<string, string> = { RAS: "bg-green-100 text-green-800", ACTION_CABINET: "bg-red-100 text-red-800", ACTION_CLIENT: "bg-orange-100 text-orange-800" }
-                    const labels: Record<string, string> = { RAS: "RAS", ACTION_CABINET: "Action cabinet", ACTION_CLIENT: "Action client" }
+                  {(["RAS", "REPONSE_APPORTEE", "REPONSE_A_APPORTER"] as const).map((s) => {
+                    const conf: Record<string, string> = { RAS: "bg-gray-100 text-gray-700", REPONSE_APPORTEE: "bg-green-100 text-green-800", REPONSE_A_APPORTER: "bg-red-100 text-red-800" }
+                    const labels: Record<string, string> = { RAS: "RAS", REPONSE_APPORTEE: "Réponse apportée", REPONSE_A_APPORTER: "Réponse à apporter" }
                     return (
                       <button
                         key={s}
@@ -779,13 +783,27 @@ export default function DossiersTable({ dossiers: initialDossiers, collaborateur
                     )
                   })}
                 </div>
-                {exchangeForm.statut === "ACTION_CABINET" && (
-                  <p className="mt-1.5 text-[11px] text-red-600">Le cabinet doit agir — apparaitra dans les alertes</p>
+                {exchangeForm.statut === "REPONSE_A_APPORTER" && (
+                  <p className="mt-1.5 text-[11px] text-red-600">Apparaitra dans les alertes jusqu&apos;à ce que la réponse soit apportée</p>
                 )}
-                {exchangeForm.statut === "ACTION_CLIENT" && (
-                  <p className="mt-1.5 text-[11px] text-orange-600">Le client doit agir — apparaitra dans les alertes</p>
+                {exchangeForm.statut === "REPONSE_APPORTEE" && (
+                  <p className="mt-1.5 text-[11px] text-green-600">La réponse a déjà été donnée — sera enregistrée dans l&apos;historique</p>
                 )}
               </div>
+
+              {/* Réponse apportée */}
+              {exchangeForm.statut === "REPONSE_APPORTEE" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Réponse apportée</label>
+                  <textarea
+                    value={exchangeForm.reponse}
+                    onChange={(e) => setExchangeForm({ ...exchangeForm, reponse: e.target.value })}
+                    rows={2}
+                    placeholder="Ex: Documents envoyés par mail, Réponse donnée par téléphone..."
+                    className="w-full rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  />
+                </div>
+              )}
 
               {/* Prochain contact */}
               <div>
