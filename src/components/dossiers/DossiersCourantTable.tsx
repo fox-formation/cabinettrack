@@ -654,6 +654,7 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
                   </select>
                 </div>
               </th>
+              <th className="px-2 py-2 text-left">Commentaire</th>
               <th className="px-2 py-2 text-right">CA</th>
               <th className="px-2 py-2 text-right">Résultat</th>
               <th className="px-2 py-2 text-right">Écrit.</th>
@@ -668,7 +669,7 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={8 + columns.length} className="px-4 py-8 text-center">
+                <td colSpan={9 + columns.length} className="px-4 py-8 text-center">
                   <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
                 </td>
               </tr>
@@ -716,6 +717,10 @@ export default function DossiersCourantTable({ dossiers, onStatsChange }: Props)
                           annualAv >= 100 ? "text-green-600" : annualAv > 50 ? "text-amber-600" : annualAv > 0 ? "text-gray-600" : "text-gray-400"
                         }`}>{annualAv}%</span>
                       </div>
+                    </td>
+                    {/* Commentaire courant */}
+                    <td className="px-2 py-1.5 max-w-[180px]">
+                      <CommentaireCourantCell dossierId={d.id} initial={d.commentaireCourant} />
                     </td>
                     {/* FEC columns */}
                     <td className="px-2 py-1.5 text-right text-[11px] tabular-nums text-gray-600">
@@ -989,5 +994,56 @@ function TachePopover({
         </p>
       </div>
     </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Inline editable comment cell for courant
+// ──────────────────────────────────────────────
+
+function CommentaireCourantCell({ dossierId, initial }: { dossierId: string; initial: string | null }) {
+  const [value, setValue] = useState(initial ?? "")
+  const [editing, setEditing] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => { setValue(initial ?? "") }, [initial])
+
+  const save = useCallback((text: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      fetch(`/api/dossiers/${dossierId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentaireCourant: text || null }),
+      })
+    }, 400)
+  }, [dossierId])
+
+  if (editing) {
+    return (
+      <textarea
+        autoFocus
+        value={value}
+        onChange={(e) => { setValue(e.target.value); save(e.target.value) }}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => { if (e.key === "Escape") setEditing(false) }}
+        rows={2}
+        className="w-full min-w-[140px] rounded border border-blue-300 bg-blue-50/30 px-1.5 py-1 text-[11px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+      />
+    )
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="w-full min-h-[24px] rounded px-1.5 py-0.5 text-left text-[11px] text-gray-600 transition-colors hover:bg-gray-100"
+      title="Cliquer pour modifier"
+    >
+      {value ? (
+        <span className="line-clamp-2 whitespace-pre-wrap">{value}</span>
+      ) : (
+        <span className="text-gray-300 italic">—</span>
+      )}
+    </button>
   )
 }

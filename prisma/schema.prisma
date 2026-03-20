@@ -228,6 +228,7 @@ model Dossier {
   dateBilanPersonnalisee   Boolean   @default(false) @map("date_bilan_personnalisee")
   dateArreteBilan          DateTime? @map("date_arrete_bilan") @db.Date
   commentaireBilan         String?   @map("commentaire_bilan") @db.Text
+  commentaireCourant       String?   @map("commentaire_courant") @db.Text
 
   // Suivi Liasse Fiscale (14 étapes)
   statutCourantSaisie    SuiviEtape? @map("statut_courant_saisie")

@@ -27,6 +27,7 @@ export interface DossierRow {
   typeMission: string | null
   paie: boolean
   commentaireBilan: string | null
+  commentaireCourant: string | null
   fec: FecInfo | null
 }
 

@@ -71,6 +71,7 @@ export async function GET() {
     typeMission: d.typeMission,
     paie: d.paie,
     commentaireBilan: d.commentaireBilan,
+    commentaireCourant: d.commentaireCourant,
     fec: fecByDossier.get(d.id) ?? null,
   }))
 

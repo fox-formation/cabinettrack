@@ -27,6 +27,7 @@ export function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
     dateBilanPersonnalisee: false,
     dateArreteBilan: null,
     commentaireBilan: null,
+    commentaireCourant: null,
     statutCourantSaisie: null,
     statutManquantSaisie: null,
     noteManquantSaisie: null,
